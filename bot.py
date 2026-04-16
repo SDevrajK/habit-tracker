@@ -7,6 +7,7 @@ Callback data format:  "log:{habit_id}:{status}"
                        "log:{habit_id}:custom"
 """
 import json
+import random
 import re
 from datetime import date, datetime
 from typing import Optional
@@ -67,6 +68,40 @@ STATUS_EMOJI = {
 }
 
 WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+_CONGRATS = [
+    "Nice work! 💪",
+    "Keep it up!",
+    "Streak intact. 🔥",
+    "Consistency is everything.",
+    "Done. One more day building the habit.",
+    "That's what I like to see. ✅",
+    "Nailed it.",
+    "Small wins add up. 📈",
+    "You showed up today.",
+    "Another one in the books.",
+    "Habit locked in for today. 🔒",
+    "Look at you go.",
+    "One day at a time. ✨",
+    "Future you is grateful.",
+    "That's the way.",
+]
+
+_PARTIAL_CONGRATS = [
+    "Partial counts. Better than nothing. 🟡",
+    "Something is better than zero.",
+    "Progress, not perfection.",
+    "Good enough for today.",
+    "A partial win is still a win.",
+]
+
+
+def _congrats(status: str) -> str:
+    if status == "completed":
+        return random.choice(_CONGRATS)
+    if status == "partial":
+        return random.choice(_PARTIAL_CONGRATS)
+    return ""
 
 
 def _fuzzy_find(name_query: str, habits: list) -> list:
@@ -212,6 +247,9 @@ async def log_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     habit = models.get_habit_by_id(DB, habit_id)
     log_row = models.get_log(DB, habit_id, today)
     updated_line = _habit_status_line(habit, log_row)
+    congrats = _congrats(status)
+    if congrats:
+        updated_line += f"\n{congrats}"
     await query.edit_message_text(updated_line, reply_markup=None)
 
 
@@ -235,9 +273,11 @@ async def custom_numeric_input(update: Update, context: ContextTypes.DEFAULT_TYP
     habit = models.get_habit_by_id(DB, habit_id)
     context.user_data.pop("awaiting_custom_habit", None)
     log_row = models.get_log(DB, habit_id, today)
-    await update.message.reply_text(
-        f"Logged: {_habit_status_line(habit, log_row)}"
-    )
+    msg = f"Logged: {_habit_status_line(habit, log_row)}"
+    congrats = _congrats(status)
+    if congrats:
+        msg += f"\n{congrats}"
+    await update.message.reply_text(msg)
 
 
 def _get_habit_name(habit_id: int) -> str:
@@ -272,7 +312,11 @@ async def _log_by_name(
     habit = matches[0]
     models.upsert_log(DB, habit["id"], today, status)
     log_row = models.get_log(DB, habit["id"], today)
-    await update.message.reply_text(_habit_status_line(habit, log_row))
+    msg = _habit_status_line(habit, log_row)
+    congrats = _congrats(status)
+    if congrats:
+        msg += f"\n{congrats}"
+    await update.message.reply_text(msg)
 
 
 async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
