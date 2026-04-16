@@ -190,6 +190,14 @@ def edit_habit(habit_id: int):
                 fields[key] = float(val)
             else:
                 fields[key] = val
+    frequency = request.form.get("frequency")
+    if frequency:
+        fields["frequency"] = frequency
+        frequency_days_raw = request.form.get("frequency_days", "").strip()
+        if frequency in ("weekly", "specific_days") and frequency_days_raw:
+            fields["frequency_days"] = [int(d.strip()) for d in frequency_days_raw.split(",") if d.strip()]
+        elif frequency == "daily":
+            fields["frequency_days"] = None
     if fields:
         models.update_habit(DB, habit_id, **fields)
     return redirect(url_for("dashboard.habits_view"))

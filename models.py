@@ -194,12 +194,15 @@ def update_habit(db_path: str, habit_id: int, **fields) -> None:
     allowed = {
         "name", "description", "threshold_ok", "threshold_good",
         "numeric_presets", "reminder_time", "active",
+        "frequency", "frequency_days",
     }
     invalid = set(fields) - allowed
     if invalid:
         raise ValueError(f"Invalid habit fields: {invalid}")
     if "numeric_presets" in fields and isinstance(fields["numeric_presets"], list):
         fields["numeric_presets"] = json.dumps(fields["numeric_presets"])
+    if "frequency_days" in fields and isinstance(fields["frequency_days"], list):
+        fields["frequency_days"] = json.dumps(fields["frequency_days"])
     set_clause = ", ".join(f"{k} = ?" for k in fields)
     values = list(fields.values()) + [habit_id]
     conn = get_connection(db_path)

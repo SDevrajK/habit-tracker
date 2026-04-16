@@ -25,7 +25,15 @@
         <details>
           <summary>Edit</summary>
           <form method="post" action="{{ url_for('dashboard.edit_habit', habit_id=h['id']) }}" class="inline-form">
-            <input type="text"   name="name"           value="{{ h['name'] }}"           placeholder="Name">
+            <input type="text" name="name" value="{{ h['name'] }}" placeholder="Name">
+            <select name="frequency">
+              <option value="daily"         {% if h['frequency'] == 'daily' %}selected{% endif %}>Daily</option>
+              <option value="weekly"        {% if h['frequency'] == 'weekly' %}selected{% endif %}>Weekly</option>
+              <option value="specific_days" {% if h['frequency'] == 'specific_days' %}selected{% endif %}>Specific Days</option>
+            </select>
+            <input type="text" name="frequency_days"
+                   value="{{ h['frequency_days'] | default('', true) }}"
+                   placeholder="Days (e.g. 0,2,3)">
             {% if h['type'] == 'numeric' %}
             <input type="number" name="threshold_ok"   value="{{ h['threshold_ok'] }}"   placeholder="ok threshold"   step="any">
             <input type="number" name="threshold_good" value="{{ h['threshold_good'] }}" placeholder="good threshold" step="any">
