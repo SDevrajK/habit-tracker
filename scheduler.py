@@ -102,6 +102,20 @@ def end_of_day_auto_fail_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEv
         logger.error("Auto-fail job error: {}", exc)
 
 
+def last_chance_reminder_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventLoop, chat_id: str) -> None:
+    """Send a 10 PM last-chance warning listing all still-unlogged habits."""
+    today = date.today()
+    habits = models.get_habits_for_day(db_path, today)
+    unlogged = [h["name"] for h in habits if models.get_log(db_path, h["id"], today) is None]
+    if not unlogged:
+        logger.debug("Last-chance reminder suppressed — all habits logged for {}", today)
+        return
+    habit_list = "\n".join(f"• {name}" for name in unlogged)
+    text = f"⚠️ Last chance — still unlogged tonight:\n{habit_list}"
+    _send_message_sync(bot_app, bot_loop, chat_id, text)
+    logger.info("Last-chance reminder sent: {} unlogged habits", len(unlogged))
+
+
 async def _auto_fail_coroutine(db_path: str) -> None:
     from bot import auto_fail_unlogged  # local import to avoid circular dep at module load
     # auto_fail_unlogged needs the app object only for potential notifications;
@@ -171,6 +185,17 @@ def start_scheduler(
         hour=16,
         minute=45,
         id="log_hours_reminder",
+        args=[db_path, bot_app, bot_loop, chat_id],
+        replace_existing=True,
+    )
+
+    # --- Last-chance warning: 22:00 every day ---
+    scheduler.add_job(
+        last_chance_reminder_job,
+        trigger="cron",
+        hour=22,
+        minute=0,
+        id="last_chance_reminder",
         args=[db_path, bot_app, bot_loop, chat_id],
         replace_existing=True,
     )
