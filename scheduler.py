@@ -12,6 +12,7 @@ Jobs that call Telegram must bridge to the bot's asyncio event loop via
 asyncio.run_coroutine_threadsafe.
 """
 import asyncio
+import random
 from datetime import date, datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -35,9 +36,39 @@ def _send_message_sync(bot_app, bot_loop: asyncio.AbstractEventLoop, chat_id: st
         logger.error("Failed to send Telegram reminder: {}", exc)
 
 
+_MORNING_ENCOURAGEMENT = [
+    "Let's make today count. 💪",
+    "One day at a time. You've got this.",
+    "Small steps, big results. 📈",
+    "Show up today and the rest takes care of itself.",
+    "Another day, another chance to build the habit.",
+    "Consistency beats perfection. Get it done.",
+    "Today's effort is tomorrow's streak. 🔥",
+    "Make it a good one.",
+    "You know what to do. Go do it.",
+    "Every day you show up, it gets easier.",
+]
+
+WEEKDAY_FULL = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+
 # ---------------------------------------------------------------------------
 # Job functions
 # ---------------------------------------------------------------------------
+
+def morning_briefing_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventLoop, chat_id: str) -> None:
+    """Send a 7 AM morning briefing listing today's habits with encouragement."""
+    today = date.today()
+    habits = models.get_habits_for_day(db_path, today)
+    if not habits:
+        return
+    day_name = WEEKDAY_FULL[today.weekday()]
+    habit_list = "\n".join(f"• {h['name']}" for h in habits)
+    encouragement = random.choice(_MORNING_ENCOURAGEMENT)
+    text = f"☀️ Good morning! Here's your {day_name}:\n\n{habit_list}\n\n{encouragement}"
+    _send_message_sync(bot_app, bot_loop, chat_id, text)
+    logger.info("Morning briefing sent: {} habits for {}", len(habits), today)
+
 
 def global_reminder_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventLoop, chat_id: str) -> None:
     """Send reminder listing all unlogged daily habits for today."""
@@ -152,6 +183,17 @@ def start_scheduler(
         return int(h), int(m)
 
     scheduler = BackgroundScheduler(timezone=timezone_name)
+
+    # --- Morning briefing: 07:00 every day ---
+    scheduler.add_job(
+        morning_briefing_job,
+        trigger="cron",
+        hour=7,
+        minute=0,
+        id="morning_briefing",
+        args=[db_path, bot_app, bot_loop, chat_id],
+        replace_existing=True,
+    )
 
     # --- Global daily reminder (time loaded at schedule time; reschedule if changed) ---
     reminder_hour, reminder_minute = _get_reminder_hour_minute()
