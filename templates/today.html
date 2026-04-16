@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Today — Habit Tracker{% endblock %}
+
+{% block content %}
+<h1>{{ today.strftime('%A, %B %d') }}</h1>
+
+{% if not habits %}
+  <p class="empty">No habits to track today.</p>
+{% else %}
+  <div class="habit-grid">
+    {% for h in habits %}
+    <div class="habit-card status-{{ h.status or 'none' }}">
+      <div class="habit-header">
+        <span class="habit-name">{{ h.name }}</span>
+        <span class="streak-badge" title="Current streak">🔥 {{ h.streak }}</span>
+      </div>
+
+      {% if h.status %}
+        <p class="habit-status">
+          {% if h.value is not none %}
+            {{ h.value }}{% if h.unit %} {{ h.unit }}{% endif %} — {{ h.status }}
+          {% else %}
+            {{ h.status }}
+          {% endif %}
+        </p>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('dashboard.log_habit') }}" class="log-form">
+        <input type="hidden" name="habit_id" value="{{ h.id }}">
+
+        {% if h.type == 'numeric' %}
+          <input type="number" name="value" placeholder="{{ h.unit or 'value' }}" step="any"
+                 min="0" class="numeric-input">
+          <button type="submit" class="btn btn-log">Log</button>
+        {% elif h.type == 'inverse_boolean' %}
+          <button type="submit" name="status" value="completed" class="btn btn-done">No ✓</button>
+          <button type="submit" name="status" value="failed"    class="btn btn-fail">Yes ✗</button>
+          <button type="submit" name="status" value="skipped"   class="btn btn-skip">Skip</button>
+        {% else %}
+          <button type="submit" name="status" value="completed" class="btn btn-done">Done ✓</button>
+          <button type="submit" name="status" value="failed"    class="btn btn-fail">Fail ✗</button>
+          <button type="submit" name="status" value="skipped"   class="btn btn-skip">Skip</button>
+        {% endif %}
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}

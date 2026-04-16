@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Habits — Habit Tracker{% endblock %}
+
+{% block content %}
+<h1>Habit Manager</h1>
+
+<table class="habits-table">
+  <thead>
+    <tr>
+      <th>Name</th><th>Type</th><th>Frequency</th><th>Thresholds</th><th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for h in habits %}
+    <tr>
+      <td>{{ h['name'] }}</td>
+      <td>{{ h['type'] }}</td>
+      <td>{{ h['frequency'] }}{% if h['frequency_days'] %} ({{ h['frequency_days'] }}){% endif %}</td>
+      <td>
+        {% if h['type'] == 'numeric' %}
+          ok≥{{ h['threshold_ok'] }} / good≥{{ h['threshold_good'] }} {{ h['unit'] or '' }}
+        {% else %}—{% endif %}
+      </td>
+      <td>
+        <details>
+          <summary>Edit</summary>
+          <form method="post" action="{{ url_for('dashboard.edit_habit', habit_id=h['id']) }}" class="inline-form">
+            <input type="text"   name="name"           value="{{ h['name'] }}"           placeholder="Name">
+            {% if h['type'] == 'numeric' %}
+            <input type="number" name="threshold_ok"   value="{{ h['threshold_ok'] }}"   placeholder="ok threshold"   step="any">
+            <input type="number" name="threshold_good" value="{{ h['threshold_good'] }}" placeholder="good threshold" step="any">
+            {% endif %}
+            <button type="submit" class="btn btn-log">Save</button>
+          </form>
+        </details>
+        <form method="post" action="{{ url_for('dashboard.deactivate_habit', habit_id=h['id']) }}"
+              style="display:inline"
+              onsubmit="return confirm('Deactivate {{ h["name"] }}?')">
+          <button type="submit" class="btn btn-fail">Deactivate</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Add New Habit</h2>
+<form method="post" action="{{ url_for('dashboard.add_habit_form') }}" class="add-form">
+  <div class="form-row">
+    <label>Name <input type="text" name="name" required placeholder="e.g. Meditate"></label>
+    <label>Type
+      <select name="type">
+        <option value="boolean">Boolean</option>
+        <option value="inverse_boolean">Inverse Boolean</option>
+        <option value="numeric">Numeric</option>
+      </select>
+    </label>
+  </div>
+  <div class="form-row">
+    <label>Frequency
+      <select name="frequency">
+        <option value="daily">Daily</option>
+        <option value="weekly">Weekly</option>
+        <option value="specific_days">Specific Days</option>
+      </select>
+    </label>
+    <label>Days (0=Mon … 6=Sun, comma-separated)
+      <input type="text" name="frequency_days" placeholder="e.g. 0,2,4">
+    </label>
+  </div>
+  <div class="form-row">
+    <label>Unit <input type="text" name="unit" placeholder="min, apps…"></label>
+    <label>Threshold OK <input type="number" name="threshold_ok" step="any"></label>
+    <label>Threshold Good <input type="number" name="threshold_good" step="any"></label>
+  </div>
+  <div class="form-row">
+    <label>Numeric Presets (comma-separated) <input type="text" name="numeric_presets" placeholder="0,15,30,60"></label>
+  </div>
+  <button type="submit" class="btn btn-done">Add Habit</button>
+</form>
+{% endblock %}

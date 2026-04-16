@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Annual Heatmap — Habit Tracker{% endblock %}
+
+{% block content %}
+<h1>Annual Heatmap</h1>
+<p class="legend">
+  <span class="swatch swatch-future">future</span>
+  <span class="swatch swatch-none">no data</span>
+  <span class="swatch swatch-low">low</span>
+  <span class="swatch swatch-mid">partial</span>
+  <span class="swatch swatch-high">all done</span>
+</p>
+<div id="heatmap-container"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const HEATMAP_DATA = {{ heatmap_data | safe }};
+  const TODAY = "{{ today }}";
+  renderHeatmap("heatmap-container", HEATMAP_DATA, TODAY);
+</script>
+{% endblock %}

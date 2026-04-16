@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Calendar — Habit Tracker{% endblock %}
+
+{% block content %}
+<h1>Per-Habit Calendar</h1>
+
+<form method="get" action="{{ url_for('dashboard.calendar_view') }}" class="habit-selector-form">
+  <select name="habit_id" onchange="this.form.submit()" class="habit-selector">
+    {% for h in habits %}
+      <option value="{{ h['id'] }}"
+        {% if selected_habit and h['id'] == selected_habit['id'] %}selected{% endif %}>
+        {{ h['name'] }}
+      </option>
+    {% endfor %}
+  </select>
+</form>
+
+{% if selected_habit %}
+  <h2>{{ selected_habit['name'] }}</h2>
+  {% if selected_habit['type'] == 'numeric' %}
+    <p class="legend">
+      <span class="swatch swatch-completed">≥ good ({{ selected_habit['threshold_good'] }} {{ selected_habit['unit'] or '' }})</span>
+      <span class="swatch swatch-partial">≥ ok ({{ selected_habit['threshold_ok'] }} {{ selected_habit['unit'] or '' }})</span>
+      <span class="swatch swatch-failed">below ok</span>
+      <span class="swatch swatch-skipped">skipped</span>
+    </p>
+  {% else %}
+    <p class="legend">
+      <span class="swatch swatch-completed">done</span>
+      <span class="swatch swatch-failed">failed</span>
+      <span class="swatch swatch-skipped">skipped</span>
+    </p>
+  {% endif %}
+  <div id="calendar-container"></div>
+{% else %}
+  <p class="empty">No habits to display.</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const CALENDAR_DATA = {{ calendar_data | safe }};
+  const TODAY = "{{ today }}";
+  {% if selected_habit %}
+  renderCalendar("calendar-container", CALENDAR_DATA, TODAY);
+  {% endif %}
+</script>
+{% endblock %}
