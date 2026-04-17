@@ -304,7 +304,7 @@ def get_logs_for_day(db_path: str, log_date: date) -> list[sqlite3.Row]:
 # Streaks
 # ---------------------------------------------------------------------------
 
-def get_streak(db_path: str, habit_id: int) -> dict:
+def get_streak(db_path: str, habit_id: int, today: Optional[date] = None) -> dict:
     """
     Compute current and all-time best streak for a habit.
 
@@ -314,12 +314,15 @@ def get_streak(db_path: str, habit_id: int) -> dict:
     - 'not_applicable' → excluded entirely (treated as if the day doesn't exist)
     - 'failed' → breaks streak
     - Days with no log entry are treated as 'failed' for past dates
+
+    Pass `today` explicitly to use the caller's timezone-aware local date.
     """
     habit = get_habit_by_id(db_path, habit_id)
     if habit is None:
         raise ValueError(f"Habit {habit_id} not found")
 
-    today = date.today()
+    if today is None:
+        today = date.today()
     created_at = date.fromisoformat(habit["created_at"])
 
     # Build a dict of {date: status} from all log entries
@@ -395,7 +398,7 @@ _SEED_HABITS = [
     ("Job applications", "numeric",         "daily",         None,             "apps", 1.0, 3.0, [0, 1, 2, 3, 5, 10],     None),
     ("Exercise",         "numeric",         "daily",         None,             "min", 20.0, 45.0, [0, 15, 20, 30, 45, 60], None),
     ("Log hours",        "boolean",         "weekly",        [FRI],            None,  None, None, None,                    "16:45"),
-    ("Put out trash",    "boolean",         "specific_days", [MON, WED, THU],  None,  None, None, None,                    "19:00"),
+    ("Put out trash",    "boolean",         "specific_days", [MON, WED, THU],  None,  None, None, None,                    "20:00"),
 ]
 
 

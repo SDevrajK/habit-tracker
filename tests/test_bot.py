@@ -273,7 +273,7 @@ async def test_custom_numeric_rejects_non_numeric():
 
     update = _make_update(AUTHORISED_CHAT_ID, "not-a-number")
     ctx = _make_context()
-    ctx.user_data = {"awaiting_custom_habit": 1}
+    ctx.user_data = {"awaiting_custom_habit": {"id": 1, "date": date(2026, 4, 17)}}
 
     with patch("bot.models.upsert_numeric_log") as mock_upsert:
         await custom_numeric_input(update, ctx)
@@ -290,7 +290,7 @@ async def test_custom_numeric_accepts_valid_number():
 
     update = _make_update(AUTHORISED_CHAT_ID, "35")
     ctx = _make_context()
-    ctx.user_data = {"awaiting_custom_habit": 1}
+    ctx.user_data = {"awaiting_custom_habit": {"id": 1, "date": date(2026, 4, 17)}}
     h = _make_habit(1, "Running", habit_type="numeric", unit="min")
     log = _make_log("partial", value=35.0)
 

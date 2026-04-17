@@ -3,7 +3,8 @@ Flask blueprint for the web dashboard.
 Routes: /, /heatmap, /calendar, /habits
 """
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 from loguru import logger
@@ -12,6 +13,12 @@ import models
 from configs.config import Config
 
 DB = Config.DATABASE_URL
+
+
+def _today() -> date:
+    """Return the current local date in the configured timezone (not UTC)."""
+    return datetime.now(ZoneInfo(Config.TIMEZONE)).date()
+
 
 dashboard_bp = Blueprint("dashboard", __name__)
 
@@ -22,12 +29,12 @@ dashboard_bp = Blueprint("dashboard", __name__)
 
 @dashboard_bp.get("/")
 def today_view():
-    today = date.today()
+    today = _today()
     habits = models.get_habits_for_day(DB, today)
     habit_data = []
     for h in habits:
         log_row = models.get_log(DB, h["id"], today)
-        streak = models.get_streak(DB, h["id"])
+        streak = models.get_streak(DB, h["id"], today=today)
         habit_data.append({
             "id": h["id"],
             "name": h["name"],
@@ -48,7 +55,7 @@ def log_habit():
     habit_id = int(request.form["habit_id"])
     status = request.form.get("status")
     value = request.form.get("value")
-    today = date.today()
+    today = _today()
 
     habit = models.get_habit_by_id(DB, habit_id)
     if not habit:
@@ -68,7 +75,7 @@ def log_habit():
 
 @dashboard_bp.get("/heatmap")
 def heatmap_view():
-    today = date.today()
+    today = _today()
     start = today - timedelta(days=364)
     all_habits = models.get_all_active_habits(DB)
 
@@ -116,7 +123,7 @@ def calendar_view():
         selected_habit = all_habits[0]
 
     if selected_habit:
-        today = date.today()
+        today = _today()
         start = date(today.year - 1, today.month, 1)
         rows = models.get_logs_for_habit(DB, selected_habit["id"], start, today)
         for row in rows:
@@ -130,7 +137,7 @@ def calendar_view():
         habits=all_habits,
         selected_habit=selected_habit,
         calendar_data=json.dumps(calendar_data),
-        today=date.today().isoformat(),
+        today=_today().isoformat(),
     )
 
 

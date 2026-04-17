@@ -20,11 +20,10 @@ const COLORS = {
 
 /**
  * Map a fraction [0,1] to a green gradient color for the annual heatmap.
- * 0 → no data (#ebedf0), >0..0.33 → light green, 0.33..0.66 → mid, 1 → dark green
+ * undefined/null/0 → no data (#ebedf0), >0..0.33 → light green, 0.33..0.66 → mid, 1 → dark green
  */
 function fractionToColor(fraction) {
-  if (fraction === undefined || fraction === null) return COLORS.none;
-  if (fraction === 0) return "#9be9a8";   // at least something attempted
+  if (fraction === undefined || fraction === null || fraction === 0) return COLORS.none;
   if (fraction < 0.34) return "#9be9a8";
   if (fraction < 0.67) return "#40c463";
   return COLORS.completed;
@@ -146,10 +145,11 @@ function renderHeatmap(containerId, data, today) {
         "class": "hm-cell",
       });
 
-      const pct = fraction !== undefined ? Math.round(fraction * 100) : 0;
       const tipText = isFuture
         ? dateStr
-        : `${dateStr}: ${pct}% completed`;
+        : fraction !== undefined
+          ? `${dateStr}: ${Math.round(fraction * 100)}% completed`
+          : `${dateStr}: no data`;
       addTooltip(rect, tipText);
       svg.appendChild(rect);
     }

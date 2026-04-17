@@ -2,15 +2,16 @@
 Telegram bot command and callback handlers.
 
 All handlers silently ignore messages from unauthorised chat IDs.
-Callback data format:  "log:{habit_id}:{status}"
-                       "log:{habit_id}:num:{value}"
-                       "log:{habit_id}:custom"
+Callback data format:  "log:{habit_id}:{iso_date}:{status}"
+                       "log:{habit_id}:{iso_date}:num:{value}"
+                       "log:{habit_id}:{iso_date}:custom"
 """
 import json
 import random
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from loguru import logger
 from telegram import (
@@ -33,6 +34,32 @@ import models
 
 DB = Config.DATABASE_URL
 CHAT_ID = Config.TELEGRAM_CHAT_ID
+
+
+def _today() -> date:
+    """Return the current local date in the configured timezone (not UTC)."""
+    return datetime.now(ZoneInfo(Config.TIMEZONE)).date()
+
+
+def _parse_log_date(args: list[str]) -> tuple[date, str | None]:
+    """Parse an optional date argument from /log args.
+
+    Accepts:
+      (no args)        → today
+      yesterday        → yesterday
+      YYYY-MM-DD       → that specific date
+
+    Returns (resolved_date, error_message_or_None).
+    """
+    if not args:
+        return _today(), None
+    arg = args[0].lower()
+    if arg == "yesterday":
+        return _today() - timedelta(days=1), None
+    try:
+        return date.fromisoformat(args[0]), None
+    except ValueError:
+        return _today(), f"Couldn't parse date '{args[0]}'. Use yesterday or YYYY-MM-DD."
 
 # ConversationHandler states
 (
@@ -119,26 +146,32 @@ def _habit_status_line(habit, log_row) -> str:
     return f"{emoji} {habit['name']}{value_str}"
 
 
-def _build_log_keyboard(habit, today: date) -> InlineKeyboardMarkup:
-    """Build inline keyboard for a single habit in the /log flow."""
+def _build_log_keyboard(habit, log_date: date) -> InlineKeyboardMarkup:
+    """Build inline keyboard for a single habit in the /log flow.
+
+    The log_date is encoded in each button's callback_data so that tapping
+    on day 2 still logs against the date when /log was called on day 1.
+    Callback data format: log:{habit_id}:{iso_date}:{status|num|custom}[:{value}]
+    """
     hid = habit["id"]
     htype = habit["type"]
+    d = log_date.isoformat()
     if htype in ("boolean", "inverse_boolean"):
         done_label = "✓ Done" if htype == "boolean" else "✓ No (good)"
         fail_label = "✗ Failed" if htype == "boolean" else "✗ Yes (bad)"
         buttons = [
-            InlineKeyboardButton(done_label, callback_data=f"log:{hid}:completed"),
-            InlineKeyboardButton(fail_label, callback_data=f"log:{hid}:failed"),
-            InlineKeyboardButton("⏭ Skip", callback_data=f"log:{hid}:skipped"),
+            InlineKeyboardButton(done_label, callback_data=f"log:{hid}:{d}:completed"),
+            InlineKeyboardButton(fail_label, callback_data=f"log:{hid}:{d}:failed"),
+            InlineKeyboardButton("⏭ Skip", callback_data=f"log:{hid}:{d}:skipped"),
         ]
         return InlineKeyboardMarkup([buttons])
     else:  # numeric
         presets = json.loads(habit["numeric_presets"] or "[]")
         preset_buttons = [
-            InlineKeyboardButton(str(p), callback_data=f"log:{hid}:num:{p}")
+            InlineKeyboardButton(str(p), callback_data=f"log:{hid}:{d}:num:{p}")
             for p in presets
         ]
-        custom_button = InlineKeyboardButton("✏️ Custom", callback_data=f"log:{hid}:custom")
+        custom_button = InlineKeyboardButton("✏️ Custom", callback_data=f"log:{hid}:{d}:custom")
         rows = [preset_buttons[i:i+4] for i in range(0, len(preset_buttons), 4)]
         rows.append([custom_button])
         return InlineKeyboardMarkup(rows)
@@ -151,7 +184,7 @@ def _build_log_keyboard(habit, today: date) -> InlineKeyboardMarkup:
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _authorised(update):
         return
-    today = date.today()
+    today = _today()
     habits = models.get_habits_for_day(DB, today)
     if not habits:
         await update.message.reply_text("No habits applicable today.")
@@ -199,57 +232,68 @@ async def habits_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def log_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _authorised(update):
         return
-    today = date.today()
-    habits = models.get_habits_for_day(DB, today)
-    if not habits:
-        await update.message.reply_text("No habits applicable today.")
+    log_date, err = _parse_log_date(context.args or [])
+    if err:
+        await update.message.reply_text(err)
         return
+    habits = models.get_habits_for_day(DB, log_date)
+    if not habits:
+        await update.message.reply_text(f"No habits applicable for {log_date.strftime('%A, %b %d')}.")
+        return
+    await update.message.reply_text(f"📅 Logging for {log_date.strftime('%A, %b %d')}")
     for h in habits:
-        log_row = models.get_log(DB, h["id"], today)
+        log_row = models.get_log(DB, h["id"], log_date)
         current = _habit_status_line(h, log_row)
         phrasing = h["name"]
         if h["type"] == "inverse_boolean":
             phrasing += " (Yes = bad)"
-        keyboard = _build_log_keyboard(h, today)
+        keyboard = _build_log_keyboard(h, log_date)
         await update.message.reply_text(
             f"{current}\nLog: {phrasing}", reply_markup=keyboard
         )
 
 
 async def log_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle inline button taps from /log."""
+    """Handle inline button taps from /log.
+
+    Callback data format: log:{habit_id}:{iso_date}:{status|num|custom}[:{value}]
+    The date is read from the button data, not from the current day, so late
+    responses are always logged against the day /log was called.
+    """
     if not _authorised(update):
         return
     query = update.callback_query
     await query.answer()
     parts = query.data.split(":")
-    # parts: ["log", habit_id, status] or ["log", habit_id, "num", value] or ["log", habit_id, "custom"]
-    if len(parts) < 3:
+    # parts: ["log", habit_id, iso_date, status] or [..., "num", value] or [..., "custom"]
+    if len(parts) < 4:
         return
     habit_id = int(parts[1])
-    today = date.today()
+    log_date = date.fromisoformat(parts[2])
+    action = parts[3]
 
-    if parts[2] == "custom":
-        # Store which habit is waiting for a custom numeric value
-        context.user_data["awaiting_custom_habit"] = habit_id
+    if action == "custom":
+        context.user_data["awaiting_custom_habit"] = {"id": habit_id, "date": log_date}
         await query.edit_message_text(
             f"Enter a number for {_get_habit_name(habit_id)}:", reply_markup=None
         )
         return
 
-    if parts[2] == "num":
-        value = float(parts[3])
-        status = models.upsert_numeric_log(DB, habit_id, today, value)
+    if action == "num":
+        value = float(parts[4])
+        status = models.upsert_numeric_log(DB, habit_id, log_date, value)
     else:
-        status = parts[2]
-        models.upsert_log(DB, habit_id, today, status)
+        status = action
+        models.upsert_log(DB, habit_id, log_date, status)
 
     habit = models.get_habit_by_id(DB, habit_id)
-    log_row = models.get_log(DB, habit_id, today)
+    log_row = models.get_log(DB, habit_id, log_date)
     updated_line = _habit_status_line(habit, log_row)
     congrats = _congrats(status)
     if congrats:
         updated_line += f"\n{congrats}"
+    if log_date != _today():
+        updated_line += f"\n📅 Logged for {log_date.strftime('%a, %b %d')}"
     await query.edit_message_text(updated_line, reply_markup=None)
 
 
@@ -257,26 +301,29 @@ async def custom_numeric_input(update: Update, context: ContextTypes.DEFAULT_TYP
     """Receive free-text number after 'custom' button tap."""
     if not _authorised(update):
         return
-    habit_id = context.user_data.get("awaiting_custom_habit")
-    if habit_id is None:
+    awaiting = context.user_data.get("awaiting_custom_habit")
+    if awaiting is None:
         return
+    habit_id = awaiting["id"]
+    log_date = awaiting["date"]
     text = update.message.text.strip()
     try:
         value = float(text)
     except ValueError:
         await update.message.reply_text(
-            f"That doesn't look like a number. Please send a numeric value."
+            "That doesn't look like a number. Please send a numeric value."
         )
         return
-    today = date.today()
-    status = models.upsert_numeric_log(DB, habit_id, today, value)
+    status = models.upsert_numeric_log(DB, habit_id, log_date, value)
     habit = models.get_habit_by_id(DB, habit_id)
     context.user_data.pop("awaiting_custom_habit", None)
-    log_row = models.get_log(DB, habit_id, today)
+    log_row = models.get_log(DB, habit_id, log_date)
     msg = f"Logged: {_habit_status_line(habit, log_row)}"
     congrats = _congrats(status)
     if congrats:
         msg += f"\n{congrats}"
+    if log_date != _today():
+        msg += f"\n📅 Logged for {log_date.strftime('%a, %b %d')}"
     await update.message.reply_text(msg)
 
 
@@ -299,7 +346,7 @@ async def _log_by_name(
         await update.message.reply_text(f"Usage: /{status.split('_')[0]} <habit name>")
         return
     query = " ".join(args)
-    today = date.today()
+    today = _today()
     habits = models.get_habits_for_day(DB, today)
     matches = _fuzzy_find(query, habits)
     if not matches:
@@ -512,7 +559,7 @@ async def add_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def auto_fail_unlogged(bot_app: "Application") -> None:
     """Mark all unlogged applicable habits as failed. Called at 23:59 daily."""
-    today = date.today()
+    today = _today()
     habits = models.get_habits_for_day(Config.DATABASE_URL, today)
     count = 0
     for h in habits:

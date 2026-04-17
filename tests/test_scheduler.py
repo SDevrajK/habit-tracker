@@ -1,7 +1,7 @@
 """
 Tests for scheduler.py — no network access; Telegram send calls are mocked.
-datetime.now() is NOT used directly in job functions (they use date.today()),
-so we patch date.today() where needed.
+Job functions use _today(timezone_name) for timezone-aware date resolution,
+so we patch scheduler._today where needed.
 """
 import asyncio
 from datetime import date
@@ -61,6 +61,9 @@ def _make_habit(habit_id: int, name: str, frequency: str = "daily", frequency_da
 # Global reminder — suppression
 # ---------------------------------------------------------------------------
 
+TZ = "America/Toronto"
+
+
 def test_global_reminder_suppressed_when_all_logged():
     """No message sent if all applicable habits are already logged."""
     today = date(2026, 4, 16)  # Thursday
@@ -75,10 +78,9 @@ def test_global_reminder_suppressed_when_all_logged():
     with (
         patch("scheduler.models.get_habits_for_day", return_value=[h1, h2]),
         patch("scheduler.models.get_log", return_value=log),
-        patch("scheduler.date") as mock_date,
+        patch("scheduler._today", return_value=today),
     ):
-        mock_date.today.return_value = today
-        global_reminder_job("/fake.db", bot_app, bot_loop, CHAT_ID)
+        global_reminder_job("/fake.db", bot_app, bot_loop, CHAT_ID, TZ)
         bot_app.bot.send_message.assert_not_called()
 
     bot_loop.close()
@@ -103,10 +105,9 @@ def test_global_reminder_sent_when_some_unlogged():
         patch("scheduler.models.get_habits_for_day", return_value=[h1, h2]),
         patch("scheduler.models.get_log", side_effect=fake_get_log),
         patch("scheduler._send_message_sync") as mock_send,
-        patch("scheduler.date") as mock_date,
+        patch("scheduler._today", return_value=today),
     ):
-        mock_date.today.return_value = today
-        global_reminder_job("/fake.db", bot_app, bot_loop, CHAT_ID)
+        global_reminder_job("/fake.db", bot_app, bot_loop, CHAT_ID, TZ)
         mock_send.assert_called_once()
         msg = mock_send.call_args[0][3]  # text argument
         assert "Running" in msg
@@ -119,23 +120,19 @@ def test_global_reminder_excludes_not_applicable():
     """The global reminder must not include not_applicable habits."""
     today = date(2026, 4, 16)
     h1 = _make_habit(1, "Put out trash", frequency="specific_days")
-    # trash is "not_applicable" today because today (Thu=3) IS in [0,2,3]
-    # but let's test with a habit that IS not_applicable
     h2 = _make_habit(2, "Brush teeth")
 
     bot_app = _make_bot_app()
     bot_loop = _make_bot_loop()
 
     # get_habits_for_day already filters not-applicable habits — it only returns applicable ones
-    # So if trash doesn't appear in get_habits_for_day results, it won't appear in reminder
     with (
         patch("scheduler.models.get_habits_for_day", return_value=[h2]),  # only h2 returned
         patch("scheduler.models.get_log", return_value=None),  # h2 unlogged
         patch("scheduler._send_message_sync") as mock_send,
-        patch("scheduler.date") as mock_date,
+        patch("scheduler._today", return_value=today),
     ):
-        mock_date.today.return_value = today
-        global_reminder_job("/fake.db", bot_app, bot_loop, CHAT_ID)
+        global_reminder_job("/fake.db", bot_app, bot_loop, CHAT_ID, TZ)
         mock_send.assert_called_once()
         msg = mock_send.call_args[0][3]
         assert "Put out trash" not in msg
@@ -159,10 +156,9 @@ def test_trash_reminder_suppressed_when_logged():
         patch("scheduler.models.get_all_active_habits", return_value=[trash]),
         patch("scheduler.models.get_log", return_value=log),
         patch("scheduler._send_message_sync") as mock_send,
-        patch("scheduler.date") as mock_date,
+        patch("scheduler._today", return_value=today),
     ):
-        mock_date.today.return_value = today
-        trash_reminder_job("/fake.db", bot_app, bot_loop, CHAT_ID)
+        trash_reminder_job("/fake.db", bot_app, bot_loop, CHAT_ID, TZ)
         mock_send.assert_not_called()
 
     bot_loop.close()
@@ -179,10 +175,9 @@ def test_trash_reminder_sent_when_unlogged():
         patch("scheduler.models.get_all_active_habits", return_value=[trash]),
         patch("scheduler.models.get_log", return_value=None),
         patch("scheduler._send_message_sync") as mock_send,
-        patch("scheduler.date") as mock_date,
+        patch("scheduler._today", return_value=today),
     ):
-        mock_date.today.return_value = today
-        trash_reminder_job("/fake.db", bot_app, bot_loop, CHAT_ID)
+        trash_reminder_job("/fake.db", bot_app, bot_loop, CHAT_ID, TZ)
         mock_send.assert_called_once()
         msg = mock_send.call_args[0][3]
         assert "trash" in msg.lower()
@@ -198,10 +193,9 @@ def test_trash_reminder_handles_missing_habit():
     with (
         patch("scheduler.models.get_all_active_habits", return_value=[]),
         patch("scheduler._send_message_sync") as mock_send,
-        patch("scheduler.date") as mock_date,
+        patch("scheduler._today", return_value=date(2026, 4, 13)),
     ):
-        mock_date.today.return_value = date(2026, 4, 13)
-        trash_reminder_job("/fake.db", bot_app, bot_loop, CHAT_ID)
+        trash_reminder_job("/fake.db", bot_app, bot_loop, CHAT_ID, TZ)
         mock_send.assert_not_called()
 
     bot_loop.close()
@@ -223,10 +217,9 @@ def test_log_hours_reminder_suppressed_when_logged():
         patch("scheduler.models.get_all_active_habits", return_value=[log_hours]),
         patch("scheduler.models.get_log", return_value=log),
         patch("scheduler._send_message_sync") as mock_send,
-        patch("scheduler.date") as mock_date,
+        patch("scheduler._today", return_value=today),
     ):
-        mock_date.today.return_value = today
-        log_hours_reminder_job("/fake.db", bot_app, bot_loop, CHAT_ID)
+        log_hours_reminder_job("/fake.db", bot_app, bot_loop, CHAT_ID, TZ)
         mock_send.assert_not_called()
 
     bot_loop.close()
@@ -243,10 +236,9 @@ def test_log_hours_reminder_sent_on_friday_unlogged():
         patch("scheduler.models.get_all_active_habits", return_value=[log_hours]),
         patch("scheduler.models.get_log", return_value=None),
         patch("scheduler._send_message_sync") as mock_send,
-        patch("scheduler.date") as mock_date,
+        patch("scheduler._today", return_value=today),
     ):
-        mock_date.today.return_value = today
-        log_hours_reminder_job("/fake.db", bot_app, bot_loop, CHAT_ID)
+        log_hours_reminder_job("/fake.db", bot_app, bot_loop, CHAT_ID, TZ)
         mock_send.assert_called_once()
         msg = mock_send.call_args[0][3]
         assert "hours" in msg.lower()

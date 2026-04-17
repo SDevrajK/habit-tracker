@@ -278,11 +278,11 @@ def test_seed_habits_match_prd(db):
     assert json.loads(log_hours["frequency_days"]) == [4]  # Friday
     assert log_hours["reminder_time"] == "16:45"
 
-    # Put out trash: specific days Mon/Wed/Thu, reminder at 19:00
+    # Put out trash: specific days Mon/Wed/Thu, reminder at 20:00
     trash = habits["Put out trash"]
     assert trash["frequency"] == "specific_days"
     assert set(json.loads(trash["frequency_days"])) == {0, 2, 3}
-    assert trash["reminder_time"] == "19:00"
+    assert trash["reminder_time"] == "20:00"
 
     # Fast food: inverse_boolean
     assert habits["Fast food"]["type"] == "inverse_boolean"

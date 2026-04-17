@@ -14,11 +14,17 @@ asyncio.run_coroutine_threadsafe.
 import asyncio
 import random
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from loguru import logger
 
 import models
+
+
+def _today(timezone_name: str) -> date:
+    """Return the current local date in the configured timezone (not UTC)."""
+    return datetime.now(ZoneInfo(timezone_name)).date()
 
 # Weekday constants (APScheduler uses 0=Mon … 6=Sun for day_of_week)
 MON, WED, THU, FRI = "mon", "wed", "thu", "fri"
@@ -56,9 +62,9 @@ WEEKDAY_FULL = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturda
 # Job functions
 # ---------------------------------------------------------------------------
 
-def morning_briefing_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventLoop, chat_id: str) -> None:
+def morning_briefing_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventLoop, chat_id: str, timezone_name: str) -> None:
     """Send a 7 AM morning briefing listing today's habits with encouragement."""
-    today = date.today()
+    today = _today(timezone_name)
     habits = models.get_habits_for_day(db_path, today)
     if not habits:
         return
@@ -70,9 +76,9 @@ def morning_briefing_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventL
     logger.info("Morning briefing sent: {} habits for {}", len(habits), today)
 
 
-def global_reminder_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventLoop, chat_id: str) -> None:
+def global_reminder_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventLoop, chat_id: str, timezone_name: str) -> None:
     """Send reminder listing all unlogged daily habits for today."""
-    today = date.today()
+    today = _today(timezone_name)
     habits = models.get_habits_for_day(db_path, today)
     unlogged = []
     for h in habits:
@@ -88,9 +94,9 @@ def global_reminder_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventLo
     logger.info("Global reminder sent: {} unlogged habits", len(unlogged))
 
 
-def trash_reminder_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventLoop, chat_id: str) -> None:
+def trash_reminder_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventLoop, chat_id: str, timezone_name: str) -> None:
     """Send trash reminder if not yet logged today."""
-    today = date.today()
+    today = _today(timezone_name)
     # Find the Put out trash habit by name (case-insensitive match)
     habits = models.get_all_active_habits(db_path)
     trash = next((h for h in habits if "trash" in h["name"].lower()), None)
@@ -105,9 +111,9 @@ def trash_reminder_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventLoo
     logger.info("Trash reminder sent for {}", today)
 
 
-def log_hours_reminder_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventLoop, chat_id: str) -> None:
+def log_hours_reminder_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventLoop, chat_id: str, timezone_name: str) -> None:
     """Send log-hours reminder if not yet logged this Friday."""
-    today = date.today()
+    today = _today(timezone_name)
     habits = models.get_all_active_habits(db_path)
     log_hours = next((h for h in habits if "log hours" in h["name"].lower()), None)
     if log_hours is None:
@@ -121,10 +127,10 @@ def log_hours_reminder_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEven
     logger.info("Log-hours reminder sent for {}", today)
 
 
-def end_of_day_auto_fail_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventLoop) -> None:
+def end_of_day_auto_fail_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventLoop, timezone_name: str) -> None:
     """At 23:59, mark all unlogged applicable habits as failed."""
     future = asyncio.run_coroutine_threadsafe(
-        _auto_fail_coroutine(db_path),
+        _auto_fail_coroutine(db_path, timezone_name),
         bot_loop,
     )
     try:
@@ -133,9 +139,9 @@ def end_of_day_auto_fail_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEv
         logger.error("Auto-fail job error: {}", exc)
 
 
-def last_chance_reminder_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventLoop, chat_id: str) -> None:
+def last_chance_reminder_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventLoop, chat_id: str, timezone_name: str) -> None:
     """Send a 10 PM last-chance warning listing all still-unlogged habits."""
-    today = date.today()
+    today = _today(timezone_name)
     habits = models.get_habits_for_day(db_path, today)
     unlogged = [h["name"] for h in habits if models.get_log(db_path, h["id"], today) is None]
     if not unlogged:
@@ -147,11 +153,11 @@ def last_chance_reminder_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEv
     logger.info("Last-chance reminder sent: {} unlogged habits", len(unlogged))
 
 
-async def _auto_fail_coroutine(db_path: str) -> None:
+async def _auto_fail_coroutine(db_path: str, timezone_name: str) -> None:
     from bot import auto_fail_unlogged  # local import to avoid circular dep at module load
     # auto_fail_unlogged needs the app object only for potential notifications;
     # we call models directly here to avoid coupling.
-    today = date.today()
+    today = _today(timezone_name)
     habits = models.get_habits_for_day(db_path, today)
     count = 0
     for h in habits:
@@ -191,7 +197,7 @@ def start_scheduler(
         hour=7,
         minute=0,
         id="morning_briefing",
-        args=[db_path, bot_app, bot_loop, chat_id],
+        args=[db_path, bot_app, bot_loop, chat_id, timezone_name],
         replace_existing=True,
     )
 
@@ -203,19 +209,19 @@ def start_scheduler(
         hour=reminder_hour,
         minute=reminder_minute,
         id="global_reminder",
-        args=[db_path, bot_app, bot_loop, chat_id],
+        args=[db_path, bot_app, bot_loop, chat_id, timezone_name],
         replace_existing=True,
     )
 
-    # --- Trash reminder: 19:00 Mon/Wed/Thu ---
+    # --- Trash reminder: 20:00 Mon/Wed/Thu ---
     scheduler.add_job(
         trash_reminder_job,
         trigger="cron",
         day_of_week=f"{MON},{WED},{THU}",
-        hour=19,
+        hour=20,
         minute=0,
         id="trash_reminder",
-        args=[db_path, bot_app, bot_loop, chat_id],
+        args=[db_path, bot_app, bot_loop, chat_id, timezone_name],
         replace_existing=True,
     )
 
@@ -227,7 +233,7 @@ def start_scheduler(
         hour=16,
         minute=45,
         id="log_hours_reminder",
-        args=[db_path, bot_app, bot_loop, chat_id],
+        args=[db_path, bot_app, bot_loop, chat_id, timezone_name],
         replace_existing=True,
     )
 
@@ -238,7 +244,7 @@ def start_scheduler(
         hour=22,
         minute=0,
         id="last_chance_reminder",
-        args=[db_path, bot_app, bot_loop, chat_id],
+        args=[db_path, bot_app, bot_loop, chat_id, timezone_name],
         replace_existing=True,
     )
 
@@ -249,7 +255,7 @@ def start_scheduler(
         hour=23,
         minute=59,
         id="auto_fail",
-        args=[db_path, bot_app, bot_loop],
+        args=[db_path, bot_app, bot_loop, timezone_name],
         replace_existing=True,
     )
 
