@@ -118,5 +118,41 @@ h2 { font-size: 1.1rem; margin: 24px 0 12px; }
                   border-radius: 4px; font-size: 0.9rem; }
 details summary { cursor: pointer; color: #0969da; font-size: 0.85rem; margin-bottom: 6px; }
 
+/* ---- Streak page ---- */
+.streak-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 28px 24px; margin-bottom: 24px;
+  text-align: center;
+}
+.streak-hero { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-bottom: 10px; }
+.streak-number {
+  font-size: 5rem; font-weight: 700; line-height: 1;
+  color: var(--color-completed);
+}
+.streak-label { font-size: 1.1rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.streak-best  { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px; }
+.streak-desc  { font-size: 0.82rem; color: var(--text-muted); max-width: 420px; margin: 0 auto; }
+
+/* ---- Challenge card ---- */
+.challenge-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px 24px;
+}
+.challenge-header-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.challenge-header-row h2 { margin: 0; }
+.badge { font-size: 0.82rem; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+.badge-success { background: #dafbe1; color: #1a7f37; }
+.badge-danger  { background: #ffebe9; color: #cf222e; }
+.challenge-stats { display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.88rem; color: var(--text-muted); margin-bottom: 16px; }
+.challenge-stats strong { color: var(--text); }
+.challenge-fail-note { color: var(--color-failed); }
+.challenge-desc { color: var(--text-muted); font-size: 0.88rem; margin-bottom: 16px; }
+.challenge-actions { margin-top: 16px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.challenge-restart-form { display: flex; gap: 8px; align-items: center; }
+.challenge-start-form { margin-top: 12px; }
+#challenge-grid { overflow-x: auto; }
+#challenge-grid svg { display: block; }
+.challenge-cell { cursor: default; }
+
 /* ---- Misc ---- */
 .empty { color: var(--text-muted); font-style: italic; }

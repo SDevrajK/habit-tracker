@@ -214,3 +214,49 @@ def edit_habit(habit_id: int):
 def deactivate_habit(habit_id: int):
     models.deactivate_habit(DB, habit_id)
     return redirect(url_for("dashboard.habits_view"))
+
+
+# ---------------------------------------------------------------------------
+# Streak & Challenge
+# ---------------------------------------------------------------------------
+
+@dashboard_bp.get("/streak")
+def streak_view():
+    today = _today()
+    overall_streak = models.get_overall_streak(DB, today=today)
+    challenge = models.get_challenge_status(DB, today=today)
+
+    # Serialise for the JS renderer — date objects become ISO strings
+    challenge_json = json.dumps({
+        "active": challenge["active"],
+        "start_date": challenge["start_date"].isoformat() if challenge["start_date"] else None,
+        "duration": challenge["duration"],
+        "current_day": challenge["current_day"],
+        "on_track": challenge["on_track"],
+        "completed": challenge["completed"],
+        "first_fail_date": challenge["first_fail_date"].isoformat() if challenge["first_fail_date"] else None,
+        "days_clean": challenge["days_clean"],
+        "day_statuses": {str(k): v for k, v in challenge["day_statuses"].items()},
+    })
+
+    return render_template(
+        "streak.html",
+        overall_streak=overall_streak,
+        challenge=challenge,
+        challenge_json=challenge_json,
+        today=today,
+    )
+
+
+@dashboard_bp.post("/challenge/configure")
+def configure_challenge():
+    action = request.form.get("action")
+    if action == "start":
+        start_date = request.form.get("start_date") or _today().isoformat()
+        duration = request.form.get("duration", "100")
+        models.set_config(DB, "challenge_active", "1")
+        models.set_config(DB, "challenge_start_date", start_date)
+        models.set_config(DB, "challenge_duration", str(duration))
+    elif action == "stop":
+        models.set_config(DB, "challenge_active", "0")
+    return redirect(url_for("dashboard.streak_view"))

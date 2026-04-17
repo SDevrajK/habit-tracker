@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Streak — Habit Tracker{% endblock %}
+
+{% block content %}
+<h1>Streak &amp; Challenge</h1>
+
+<!-- Overall streak hero -->
+<section class="streak-card">
+  <div class="streak-hero">
+    <div class="streak-number">{{ overall_streak.current }}</div>
+    <div class="streak-label">perfect days</div>
+  </div>
+  <div class="streak-best">Best ever: <strong>{{ overall_streak.best }}</strong> days</div>
+  <p class="streak-desc">Days where every applicable habit was completed or partially completed — no fails, no skips.</p>
+</section>
+
+<!-- Challenge section -->
+{% if challenge.active and challenge.current_day > 0 %}
+<section class="challenge-card">
+  <div class="challenge-header-row">
+    <h2>{{ challenge.duration }}-Day Challenge</h2>
+    {% if challenge.completed %}
+      <span class="badge badge-success">🏆 Complete!</span>
+    {% elif challenge.on_track %}
+      <span class="badge badge-success">✓ On Track</span>
+    {% else %}
+      <span class="badge badge-danger">✗ Broken</span>
+    {% endif %}
+  </div>
+
+  <div class="challenge-stats">
+    <span>Day <strong>{{ challenge.current_day }}</strong> / {{ challenge.duration }}</span>
+    <span>{{ challenge.days_clean }} clean days</span>
+    {% if not challenge.on_track and challenge.first_fail_date %}
+    <span class="challenge-fail-note">First break: {{ challenge.first_fail_date.strftime('%b %d') }}</span>
+    {% endif %}
+  </div>
+
+  <div id="challenge-grid"></div>
+
+  <p class="legend" style="margin-top:10px;">
+    <span class="swatch swatch-completed">clean</span>
+    <span class="swatch swatch-failed">failed / skipped</span>
+    <span class="swatch swatch-none">upcoming</span>
+  </p>
+
+  <div class="challenge-actions">
+    <form method="post" action="{{ url_for('dashboard.configure_challenge') }}" style="display:inline;">
+      <input type="hidden" name="action" value="stop">
+      <button class="btn btn-fail" onclick="return confirm('Stop the challenge?')">Stop Challenge</button>
+    </form>
+    {% if not challenge.on_track or challenge.completed %}
+    <form method="post" action="{{ url_for('dashboard.configure_challenge') }}" style="display:inline;" class="challenge-restart-form">
+      <input type="hidden" name="action" value="start">
+      <input type="date" name="start_date" value="{{ today.isoformat() }}">
+      <input type="hidden" name="duration" value="{{ challenge.duration }}">
+      <button class="btn btn-log">Restart Challenge</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+
+{% elif challenge.active and challenge.current_day == 0 %}
+<section class="challenge-card">
+  <h2>{{ challenge.duration }}-Day Challenge</h2>
+  <p>Challenge starts on <strong>{{ challenge.start_date.strftime('%A, %B %d, %Y') }}</strong>.</p>
+  <div class="challenge-actions">
+    <form method="post" action="{{ url_for('dashboard.configure_challenge') }}">
+      <input type="hidden" name="action" value="stop">
+      <button class="btn btn-fail">Cancel Challenge</button>
+    </form>
+  </div>
+</section>
+
+{% else %}
+<section class="challenge-card">
+  <h2>100-Day Challenge</h2>
+  <p class="challenge-desc">Complete every applicable habit without failing or skipping for 100 consecutive days.</p>
+  <form method="post" action="{{ url_for('dashboard.configure_challenge') }}" class="challenge-start-form">
+    <input type="hidden" name="action" value="start">
+    <div class="form-row">
+      <label>Start date
+        <input type="date" name="start_date" value="{{ today.isoformat() }}">
+      </label>
+      <label>Duration (days)
+        <input type="number" name="duration" value="100" min="1" max="365" style="width:80px;">
+      </label>
+    </div>
+    <button class="btn btn-log" style="margin-top:10px;">Start Challenge</button>
+  </form>
+</section>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+{% if challenge.active and challenge.current_day > 0 %}
+<script>
+  const CHALLENGE_DATA = {{ challenge_json | safe }};
+  renderChallengeGrid(
+    "challenge-grid",
+    CHALLENGE_DATA.day_statuses,
+    CHALLENGE_DATA.duration,
+    CHALLENGE_DATA.start_date,
+    CHALLENGE_DATA.current_day
+  );
+</script>
+{% endif %}
+{% endblock %}

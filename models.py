@@ -383,6 +383,192 @@ def get_streak(db_path: str, habit_id: int, today: Optional[date] = None) -> dic
 
 
 # ---------------------------------------------------------------------------
+# Overall streak (all habits)
+# ---------------------------------------------------------------------------
+
+def get_overall_streak(db_path: str, today: Optional[date] = None) -> dict:
+    """
+    Current and best streak of 'perfect days' across all active habits.
+    A perfect day = every applicable habit logged as completed, partial, or not_applicable.
+    failed or skipped breaks the streak; unlogged past days count as failed.
+    """
+    if today is None:
+        today = date.today()
+
+    all_habits = get_all_active_habits(db_path)
+    if not all_habits:
+        return {"current": 0, "best": 0}
+
+    conn = get_connection(db_path)
+    earliest_row = conn.execute("SELECT MIN(created_at) FROM habits WHERE active = 1").fetchone()[0]
+    conn.close()
+    if not earliest_row:
+        return {"current": 0, "best": 0}
+
+    lower_bound = date.fromisoformat(earliest_row)
+
+    conn = get_connection(db_path)
+    log_rows = conn.execute(
+        "SELECT habit_id, date, status FROM logs WHERE date BETWEEN ? AND ?",
+        (lower_bound.isoformat(), today.isoformat()),
+    ).fetchall()
+    conn.close()
+
+    log_map: dict[date, dict[int, str]] = {}
+    for row in log_rows:
+        d = date.fromisoformat(row["date"])
+        log_map.setdefault(d, {})[row["habit_id"]] = row["status"]
+
+    def day_is_clean(d: date) -> bool:
+        applicable = [h for h in all_habits if _habit_applies_on(h, d)]
+        if not applicable:
+            return True
+        day_logs = log_map.get(d, {})
+        for h in applicable:
+            s = day_logs.get(h["id"])
+            if s is None:
+                if d < today:
+                    return False  # unlogged past day = failed
+                # today: unlogged = still in progress, don't break streak yet
+            elif s in ("failed", "skipped"):
+                return False
+        return True
+
+    # Current streak: walk backward from today
+    current = 0
+    d = today
+    while d >= lower_bound:
+        if day_is_clean(d):
+            current += 1
+        else:
+            break
+        d -= timedelta(days=1)
+
+    # Best streak: walk forward from lower_bound
+    best = 0
+    running = 0
+    d = lower_bound
+    while d <= today:
+        if day_is_clean(d):
+            running += 1
+            best = max(best, running)
+        else:
+            running = 0
+        d += timedelta(days=1)
+
+    return {"current": current, "best": max(best, current)}
+
+
+# ---------------------------------------------------------------------------
+# Challenge
+# ---------------------------------------------------------------------------
+
+def get_challenge_status(db_path: str, today: Optional[date] = None) -> dict:
+    """
+    Returns the current challenge state from config keys:
+      challenge_active, challenge_start_date, challenge_duration.
+
+    day_statuses: {1: "clean"|"failed"|"future", ...}
+    current_day:  1-indexed day number (0 if challenge hasn't started yet)
+    on_track:     True while no failed/skipped days exist
+    completed:    True when all days passed and on_track
+    """
+    if today is None:
+        today = date.today()
+
+    active = get_config(db_path, "challenge_active") == "1"
+    start_str = get_config(db_path, "challenge_start_date")
+    duration = int(get_config(db_path, "challenge_duration") or "100")
+
+    base: dict = {
+        "active": active,
+        "start_date": None,
+        "duration": duration,
+        "current_day": 0,
+        "on_track": True,
+        "first_fail_date": None,
+        "days_clean": 0,
+        "completed": False,
+        "day_statuses": {},
+    }
+
+    if not active or not start_str:
+        return base
+
+    start_date = date.fromisoformat(start_str)
+    base["start_date"] = start_date
+
+    if today < start_date:
+        return base  # challenge hasn't started yet
+
+    check_end = min(today, start_date + timedelta(days=duration - 1))
+    all_habits = get_all_active_habits(db_path)
+
+    conn = get_connection(db_path)
+    log_rows = conn.execute(
+        "SELECT habit_id, date, status FROM logs WHERE date BETWEEN ? AND ?",
+        (start_str, check_end.isoformat()),
+    ).fetchall()
+    conn.close()
+
+    log_map: dict[date, dict[int, str]] = {}
+    for row in log_rows:
+        d = date.fromisoformat(row["date"])
+        log_map.setdefault(d, {})[row["habit_id"]] = row["status"]
+
+    day_statuses: dict[int, str] = {}
+    first_fail_date: Optional[date] = None
+    days_clean = 0
+    on_track = True
+
+    for i in range(duration):
+        d = start_date + timedelta(days=i)
+        day_num = i + 1
+
+        if d > today:
+            day_statuses[day_num] = "future"
+            continue
+
+        applicable = [h for h in all_habits if _habit_applies_on(h, d)]
+        day_logs = log_map.get(d, {})
+
+        day_clean = True
+        for h in applicable:
+            s = day_logs.get(h["id"])
+            if s is None:
+                if d < today:
+                    day_clean = False  # unlogged past day = failed
+                # today: unlogged = still in progress
+            elif s in ("failed", "skipped"):
+                day_clean = False
+
+        if day_clean:
+            day_statuses[day_num] = "clean"
+            if d < today:
+                days_clean += 1
+        else:
+            day_statuses[day_num] = "failed"
+            if first_fail_date is None:
+                first_fail_date = d
+            on_track = False
+
+    current_day = min((today - start_date).days + 1, duration)
+    completed = on_track and (today - start_date).days >= duration - 1
+
+    return {
+        "active": True,
+        "start_date": start_date,
+        "duration": duration,
+        "current_day": current_day,
+        "on_track": on_track,
+        "first_fail_date": first_fail_date,
+        "days_clean": days_clean,
+        "completed": completed,
+        "day_statuses": day_statuses,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Seed data (PRD §5)
 # ---------------------------------------------------------------------------
 

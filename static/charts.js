@@ -276,3 +276,74 @@ function renderCalendar(containerId, data, today) {
 
   container.appendChild(svg);
 }
+
+// ---- Challenge Grid -------------------------------------------------------
+
+/**
+ * Render a 10-column grid of N challenge days.
+ * @param {string} containerId
+ * @param {Object} dayStatuses   — { "1": "clean"|"failed"|"future", ... } (string keys from JSON)
+ * @param {number} duration      — total days in challenge (e.g. 100)
+ * @param {string} startDateStr  — "YYYY-MM-DD" of day 1
+ * @param {number} currentDay    — 1-indexed current day number (for today highlight)
+ */
+function renderChallengeGrid(containerId, dayStatuses, duration, startDateStr, currentDay) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const CELL = 30, GAP = 4, STEP = CELL + GAP;
+  const COLS = 10;
+  const ROWS = Math.ceil(duration / COLS);
+  const PAD = 6;
+  const WIDTH  = COLS * STEP + PAD;
+  const HEIGHT = ROWS * STEP + PAD;
+
+  const svg = svgEl("svg", { width: WIDTH, height: HEIGHT });
+
+  const STATUS_FILL = {
+    clean:   "#2da44e",
+    failed:  "#cf222e",
+    future:  "#ebedf0",
+  };
+
+  const startDate = parseDate(startDateStr);
+
+  for (let i = 0; i < duration; i++) {
+    const dayNum   = i + 1;
+    const col      = i % COLS;
+    const row      = Math.floor(i / COLS);
+    const x        = PAD / 2 + col * STEP;
+    const y        = PAD / 2 + row * STEP;
+    const status   = dayStatuses[String(dayNum)] || "future";
+    const isToday  = (dayNum === currentDay);
+    const fill     = STATUS_FILL[status] || STATUS_FILL.future;
+
+    const rect = svgEl("rect", {
+      x, y, width: CELL, height: CELL, rx: 4,
+      fill,
+      stroke:         isToday ? "#0969da" : "rgba(27,31,35,0.1)",
+      "stroke-width": isToday ? "2.5" : "0.5",
+      "class": "challenge-cell",
+    });
+
+    // Day number label inside cell
+    const label = svgEl("text", {
+      x: x + CELL / 2, y: y + CELL / 2 + 4,
+      "font-size": 9, "text-anchor": "middle", "font-weight": "bold",
+      fill: status === "future" ? "#adb5bd" : "white",
+    });
+    label.textContent = dayNum;
+
+    // Tooltip: day number + date + status
+    const d = new Date(startDate);
+    d.setDate(d.getDate() + i);
+    const dateStr = fmtDate(d);
+    const tipLabel = status === "future" ? "upcoming" : status;
+    addTooltip(rect, `Day ${dayNum} — ${dateStr} — ${tipLabel}`);
+
+    svg.appendChild(rect);
+    svg.appendChild(label);
+  }
+
+  container.appendChild(svg);
+}

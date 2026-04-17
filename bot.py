@@ -415,6 +415,89 @@ async def setreminder_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 # ---------------------------------------------------------------------------
+# /challenge
+# ---------------------------------------------------------------------------
+
+async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    /challenge            — show current challenge status
+    /challenge start      — start a challenge from today
+    /challenge start DATE — start a challenge from DATE (YYYY-MM-DD)
+    /challenge stop       — deactivate the current challenge
+    """
+    if not _authorised(update):
+        return
+
+    today = _today()
+    args = context.args or []
+    sub = args[0].lower() if args else ""
+
+    if sub == "start":
+        start_date = today
+        if len(args) > 1:
+            try:
+                start_date = date.fromisoformat(args[1])
+            except ValueError:
+                await update.message.reply_text(f"Invalid date '{args[1]}'. Use YYYY-MM-DD.")
+                return
+        duration = 100
+        models.set_config(DB, "challenge_active", "1")
+        models.set_config(DB, "challenge_start_date", start_date.isoformat())
+        models.set_config(DB, "challenge_duration", str(duration))
+        if start_date > today:
+            days_until = (start_date - today).days
+            await update.message.reply_text(
+                f"🏁 {duration}-day challenge set!\n"
+                f"Starts {start_date.strftime('%A, %B %d, %Y')} — in {days_until} day{'s' if days_until != 1 else ''}."
+            )
+        else:
+            await update.message.reply_text(
+                f"🏁 {duration}-day challenge started today!\n"
+                f"No fails, no skips — for {duration} days. Let's go."
+            )
+        return
+
+    if sub == "stop":
+        models.set_config(DB, "challenge_active", "0")
+        await update.message.reply_text("Challenge stopped.")
+        return
+
+    # Show status
+    cs = models.get_challenge_status(DB, today)
+    if not cs["active"]:
+        await update.message.reply_text(
+            "No active challenge.\n"
+            "Start one: /challenge start  or  /challenge start YYYY-MM-DD"
+        )
+        return
+
+    if cs["current_day"] == 0:
+        days_until = (cs["start_date"] - today).days
+        await update.message.reply_text(
+            f"🏁 Challenge starts in {days_until} day{'s' if days_until != 1 else ''} "
+            f"({cs['start_date'].strftime('%A, %B %d')})."
+        )
+        return
+
+    if cs["completed"]:
+        await update.message.reply_text(
+            f"🏆 You completed the {cs['duration']}-day challenge!\n"
+            f"All {cs['days_clean']} days were clean."
+        )
+    elif cs["on_track"]:
+        await update.message.reply_text(
+            f"🔥 Day {cs['current_day']} / {cs['duration']} — on track!\n"
+            f"{cs['days_clean']} clean days so far."
+        )
+    else:
+        await update.message.reply_text(
+            f"❌ Challenge broken on {cs['first_fail_date'].strftime('%B %d')}.\n"
+            f"Day {cs['current_day']} / {cs['duration']}.\n"
+            f"Start a new one: /challenge start"
+        )
+
+
+# ---------------------------------------------------------------------------
 # /add conversation
 # ---------------------------------------------------------------------------
 
@@ -599,6 +682,7 @@ def build_application(token: str) -> Application:
     application.add_handler(CommandHandler("skip", skip_command))
     application.add_handler(CommandHandler("remove", remove_command))
     application.add_handler(CommandHandler("setreminder", setreminder_command))
+    application.add_handler(CommandHandler("challenge", challenge_command))
     application.add_handler(add_conv)
     application.add_handler(CallbackQueryHandler(log_callback, pattern=r"^log:"))
     # Custom numeric input: only fires when bot is awaiting a value
