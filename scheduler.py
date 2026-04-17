@@ -71,7 +71,20 @@ def morning_briefing_job(db_path: str, bot_app, bot_loop: asyncio.AbstractEventL
     day_name = WEEKDAY_FULL[today.weekday()]
     habit_list = "\n".join(f"• {h['name']}" for h in habits)
     encouragement = random.choice(_MORNING_ENCOURAGEMENT)
-    text = f"☀️ Good morning! Here's your {day_name}:\n\n{habit_list}\n\n{encouragement}"
+
+    # Challenge line
+    cs = models.get_challenge_status(db_path, today)
+    challenge_line = ""
+    if cs["active"] and cs["current_day"] > 0:
+        if cs["on_track"]:
+            challenge_line = f"\n🏁 Challenge day {cs['current_day']} / {cs['duration']} — keep the streak alive!"
+        else:
+            challenge_line = f"\n⚠️ Challenge broken (day {cs['current_day']} / {cs['duration']})."
+    elif cs["active"] and cs["current_day"] == 0:
+        days_until = (cs["start_date"] - today).days
+        challenge_line = f"\n🏁 Challenge starts in {days_until} day{'s' if days_until != 1 else ''}."
+
+    text = f"☀️ Good morning! Here's your {day_name}:\n\n{habit_list}{challenge_line}\n\n{encouragement}"
     _send_message_sync(bot_app, bot_loop, chat_id, text)
     logger.info("Morning briefing sent: {} habits for {}", len(habits), today)
 

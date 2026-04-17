@@ -15,6 +15,8 @@ class Config:
     DATABASE_URL: str = _require("DATABASE_URL")
     TIMEZONE: str = os.environ.get("TIMEZONE", "America/Toronto")
     PORT: int = int(os.environ.get("PORT", 5000))
+    DASHBOARD_USER: str | None = os.environ.get("DASHBOARD_USER")
+    DASHBOARD_PASS: str | None = os.environ.get("DASHBOARD_PASS")
 
 
 logger.debug(
