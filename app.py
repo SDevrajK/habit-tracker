@@ -76,8 +76,10 @@ def telegram_webhook():
 # ---------------------------------------------------------------------------
 
 from dashboard import dashboard_bp  # noqa: E402
+from fitness import fitness_bp  # noqa: E402
 
 app.register_blueprint(dashboard_bp)
+app.register_blueprint(fitness_bp)
 
 
 # ---------------------------------------------------------------------------

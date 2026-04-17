@@ -61,7 +61,7 @@ def _parse_log_date(args: list[str]) -> tuple[date, str | None]:
     except ValueError:
         return _today(), f"Couldn't parse date '{args[0]}'. Use yesterday or YYYY-MM-DD."
 
-# ConversationHandler states
+# ConversationHandler states for /add
 (
     ADD_TYPE,
     ADD_FREQUENCY,
@@ -71,6 +71,9 @@ def _parse_log_date(args: list[str]) -> tuple[date, str | None]:
     ADD_THRESHOLD_GOOD,
     ADD_PRESETS,
 ) = range(7)
+
+# ConversationHandler states for /measurements (separate range)
+MEAS_METRIC, MEAS_VALUE = 10, 11
 
 
 # ---------------------------------------------------------------------------
@@ -298,9 +301,27 @@ async def log_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def custom_numeric_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Receive free-text number after 'custom' button tap."""
+    """Receive free-text number after 'custom' button tap or /weight prompt."""
     if not _authorised(update):
         return
+
+    # Check for awaiting weight input first
+    awaiting_weight = context.user_data.get("awaiting_weight")
+    if awaiting_weight is not None:
+        text = update.message.text.strip()
+        try:
+            value = float(text)
+        except ValueError:
+            await update.message.reply_text("That doesn't look like a number. Please send a numeric value.")
+            return
+        profile = models.get_user_profile(DB)
+        unit = profile.get("preferred_weight_unit", "lbs")
+        log_date = awaiting_weight["date"]
+        models.upsert_body_metric(DB, log_date, "weight", value, unit)
+        context.user_data.pop("awaiting_weight", None)
+        await update.message.reply_text(f"Weight logged: {value} {unit} \u2713")
+        return
+
     awaiting = context.user_data.get("awaiting_custom_habit")
     if awaiting is None:
         return
@@ -654,6 +675,216 @@ async def auto_fail_unlogged(bot_app: "Application") -> None:
 
 
 # ---------------------------------------------------------------------------
+# /weight
+# ---------------------------------------------------------------------------
+
+_INCHES_TO_CM = 2.54
+
+async def weight_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log body weight: /weight [value]"""
+    if not _authorised(update):
+        return
+    profile = models.get_user_profile(DB)
+    unit = profile.get("preferred_weight_unit", "lbs")
+    today = _today()
+
+    if context.args:
+        try:
+            value = float(context.args[0])
+        except ValueError:
+            await update.message.reply_text("That doesn't look like a number. Usage: /weight 182.4")
+            return
+        models.upsert_body_metric(DB, today, "weight", value, unit)
+        await update.message.reply_text(f"Weight logged: {value} {unit} \u2713")
+    else:
+        context.user_data["awaiting_weight"] = {"date": today}
+        await update.message.reply_text(f"Enter your weight in {unit}:")
+
+
+# ---------------------------------------------------------------------------
+# /measurements conversation
+# ---------------------------------------------------------------------------
+
+_MEAS_LABELS = {
+    "weight": "Weight",
+    "waist": "Waist",
+    "hip": "Hip",
+    "chest": "Chest",
+    "neck": "Neck",
+    "upper_arm_left": "Arm (L)",
+    "upper_arm_right": "Arm (R)",
+    "thigh_left": "Thigh (L)",
+    "thigh_right": "Thigh (R)",
+}
+
+_MEAS_METRICS = [
+    "waist", "hip", "chest", "neck",
+    "upper_arm_left", "upper_arm_right", "thigh_left", "thigh_right", "weight",
+]
+
+
+async def measurements_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Entry point for /measurements ConversationHandler."""
+    if not _authorised(update):
+        return ConversationHandler.END
+    # Build 3x3 grid of metric buttons + Cancel
+    buttons = []
+    row = []
+    for i, metric in enumerate(_MEAS_METRICS):
+        row.append(InlineKeyboardButton(_MEAS_LABELS[metric], callback_data=f"meas:{metric}"))
+        if len(row) == 3:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton("Cancel", callback_data="meas:cancel")])
+    await update.message.reply_text(
+        "Select a measurement to log:",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+    return MEAS_METRIC
+
+
+async def measurements_metric(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle metric selection button tap."""
+    query = update.callback_query
+    await query.answer()
+    parts = query.data.split(":")
+    if len(parts) < 2 or parts[1] == "cancel":
+        await query.edit_message_text("Measurement cancelled.", reply_markup=None)
+        return ConversationHandler.END
+
+    metric = parts[1]
+    profile = models.get_user_profile(DB)
+    if metric == "weight":
+        unit = profile.get("preferred_weight_unit", "lbs")
+    else:
+        unit = profile.get("preferred_length_unit", "in")
+
+    context.user_data["meas_pending"] = {"metric": metric, "unit": unit}
+    await query.edit_message_text(
+        f"Enter {_MEAS_LABELS.get(metric, metric)} value in {unit}:",
+        reply_markup=None,
+    )
+    return MEAS_VALUE
+
+
+async def measurements_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle the numeric value input for a measurement."""
+    if not _authorised(update):
+        return ConversationHandler.END
+    pending = context.user_data.get("meas_pending")
+    if not pending:
+        return ConversationHandler.END
+
+    text = update.message.text.strip()
+    try:
+        value = float(text)
+    except ValueError:
+        await update.message.reply_text("Please enter a numeric value.")
+        return MEAS_VALUE
+
+    metric = pending["metric"]
+    unit = pending["unit"]
+    today = _today()
+
+    models.upsert_body_metric(DB, today, metric, value, unit)
+    context.user_data.pop("meas_pending", None)
+    await update.message.reply_text(f"{value} {unit} logged \u2713")
+    return ConversationHandler.END
+
+
+async def measurements_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data.pop("meas_pending", None)
+    await update.message.reply_text("Measurement cancelled.")
+    return ConversationHandler.END
+
+
+# ---------------------------------------------------------------------------
+# /fitness — summary reply
+# ---------------------------------------------------------------------------
+
+async def fitness_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/fitness — reply with formatted latest stats."""
+    if not _authorised(update):
+        return
+    latest = models.get_latest_body_metrics(DB)
+    profile = models.get_user_profile(DB)
+    height_cm = float(profile["height_cm"]) if "height_cm" in profile else None
+    today = _today()
+
+    if not latest:
+        await update.message.reply_text("No fitness data logged yet. Use /weight or /measurements to start.")
+        return
+
+    lines = [f"\U0001f4ca Latest Fitness Stats ({today.isoformat()})"]
+
+    def _fmt(metric_key: str, label: str) -> Optional[str]:
+        row = latest.get(metric_key)
+        if not row:
+            return None
+        return f"{label}: {row['value']:>8} {row['unit']}"
+
+    # Weight
+    w_line = _fmt("weight", "Weight")
+    if w_line:
+        lines.append(w_line)
+
+    # Waist with WHtR
+    waist_row = latest.get("waist")
+    if waist_row:
+        line = f"Waist:  {waist_row['value']:>8} {waist_row['unit']}"
+        if height_cm:
+            waist_cm = waist_row["value"] * (_INCHES_TO_CM if waist_row["unit"] == "in" else 1.0)
+            try:
+                whtr = models.compute_whtr(waist_cm, height_cm)
+                line += f"  | WHtR: {whtr:.2f}"
+            except ValueError:
+                pass
+        lines.append(line)
+
+    # Hip with WHR
+    hip_row = latest.get("hip")
+    if hip_row:
+        line = f"Hip:    {hip_row['value']:>8} {hip_row['unit']}"
+        if waist_row:
+            waist_cm = waist_row["value"] * (_INCHES_TO_CM if waist_row["unit"] == "in" else 1.0)
+            hip_cm = hip_row["value"] * (_INCHES_TO_CM if hip_row["unit"] == "in" else 1.0)
+            try:
+                whr = models.compute_whr(waist_cm, hip_cm)
+                line += f"  | WHR:  {whr:.2f}"
+            except ValueError:
+                pass
+        lines.append(line)
+
+    # Remaining single-site
+    for key, label in [("chest", "Chest"), ("neck", "Neck")]:
+        l = _fmt(key, label)
+        if l:
+            lines.append(l)
+
+    # Arms
+    arm_l = latest.get("upper_arm_left")
+    arm_r = latest.get("upper_arm_right")
+    if arm_l or arm_r:
+        lv = f"{arm_l['value']}" if arm_l else "-"
+        rv = f"{arm_r['value']}" if arm_r else "-"
+        unit = (arm_l or arm_r)["unit"]
+        lines.append(f"Arm (L/R): {lv} / {rv} {unit}")
+
+    # Thighs
+    th_l = latest.get("thigh_left")
+    th_r = latest.get("thigh_right")
+    if th_l or th_r:
+        lv = f"{th_l['value']}" if th_l else "-"
+        rv = f"{th_r['value']}" if th_r else "-"
+        unit = (th_l or th_r)["unit"]
+        lines.append(f"Thigh (L/R): {lv} / {rv} {unit}")
+
+    await update.message.reply_text("\n".join(lines))
+
+
+# ---------------------------------------------------------------------------
 # Application builder
 # ---------------------------------------------------------------------------
 
@@ -674,6 +905,15 @@ def build_application(token: str) -> Application:
         fallbacks=[CommandHandler("cancel", add_cancel)],
     )
 
+    meas_conv = ConversationHandler(
+        entry_points=[CommandHandler("measurements", measurements_start)],
+        states={
+            MEAS_METRIC: [CallbackQueryHandler(measurements_metric, pattern=r"^meas:")],
+            MEAS_VALUE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, measurements_value)],
+        },
+        fallbacks=[CommandHandler("cancel", measurements_cancel)],
+    )
+
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("habits", habits_command))
     application.add_handler(CommandHandler("log", log_command))
@@ -683,6 +923,9 @@ def build_application(token: str) -> Application:
     application.add_handler(CommandHandler("remove", remove_command))
     application.add_handler(CommandHandler("setreminder", setreminder_command))
     application.add_handler(CommandHandler("challenge", challenge_command))
+    application.add_handler(CommandHandler("weight", weight_command))
+    application.add_handler(CommandHandler("fitness", fitness_command))
+    application.add_handler(meas_conv)
     application.add_handler(add_conv)
     application.add_handler(CallbackQueryHandler(log_callback, pattern=r"^log:"))
     # Custom numeric input: only fires when bot is awaiting a value

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Fitness Overview{% endblock %}
+
+{% block content %}
+<h1>Fitness Overview</h1>
+
+{% if whtr is not none or whr is not none %}
+<div class="ratio-cards">
+  {% if whtr is not none %}
+  <div class="ratio-card">
+    <div class="ratio-label">WHtR (Waist-to-Height)</div>
+    <div class="ratio-value">{{ "%.2f"|format(whtr) }}</div>
+    <div class="ratio-interp {% if whtr < 0.5 %}healthy{% elif whtr < 0.6 %}elevated{% else %}high{% endif %}">
+      {{ whtr_text }}
+    </div>
+  </div>
+  {% endif %}
+  {% if whr is not none %}
+  <div class="ratio-card">
+    <div class="ratio-label">WHR (Waist-to-Hip)</div>
+    <div class="ratio-value">{{ "%.2f"|format(whr) }}</div>
+    <div class="ratio-interp">{{ whr_text }}</div>
+  </div>
+  {% endif %}
+</div>
+{% elif not height_cm %}
+<p class="empty">Set your height below to compute WHtR.</p>
+{% endif %}
+
+<h2>Latest Measurements</h2>
+<div class="metric-grid">
+  {% for card in metric_cards %}
+  <div class="metric-card">
+    <div class="metric-label">{{ card.label }}</div>
+    {% if card.value is not none %}
+    <div class="metric-value">{{ card.value }} <small>{{ card.unit }}</small></div>
+    <div class="metric-date">{{ card.date }}</div>
+    <div class="sparkline-container" id="spark-{{ card.key }}"></div>
+    {% else %}
+    <div class="metric-value empty">--</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<h2>Height Profile</h2>
+<div class="profile-form">
+  <form method="POST" action="{{ url_for('fitness.save_profile') }}">
+    <label for="height_cm">Height (cm):</label>
+    <input type="number" step="0.1" name="height_cm" id="height_cm"
+           value="{{ height_cm or '' }}" placeholder="e.g. 178.0">
+    <button type="submit" class="btn btn-log">Save</button>
+  </form>
+</div>
+
+<details style="margin-top: 20px;">
+  <summary>Measurement Protocol</summary>
+  <ul style="margin-top: 8px; padding-left: 20px; color: var(--text-muted); font-size: 0.88rem;">
+    <li>Measure in the morning, after using the bathroom, before eating or drinking, before exercise.</li>
+    <li>Use a non-stretchable tape; stand upright, weight equally distributed, arms at sides.</li>
+    <li>Take each measurement twice; if they differ by more than 0.5 cm, take a third and average.</li>
+    <li>Always use the same anatomical landmark each session.</li>
+  </ul>
+</details>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var sparkData = {{ metric_cards | tojson }};
+  sparkData.forEach(function(card) {
+    if (card.sparkline && card.sparkline.length > 1) {
+      renderSparkline("spark-" + card.key, card.sparkline, "#0969da");
+    }
+  });
+</script>
+{% endblock %}

@@ -13,6 +13,10 @@
     <a href="{{ url_for('dashboard.heatmap_view') }}" class="nav-link">Heatmap</a>
     <a href="{{ url_for('dashboard.calendar_view') }}" class="nav-link">Calendar</a>
     <a href="{{ url_for('dashboard.habits_view') }}" class="nav-link">Habits</a>
+    <span class="nav-sep">|</span>
+    <a href="{{ url_for('fitness.overview') }}" class="nav-link">Fitness</a>
+    <a href="{{ url_for('fitness.weight') }}" class="nav-link">Weight</a>
+    <a href="{{ url_for('fitness.measurements') }}" class="nav-link">Measurements</a>
   </nav>
   <main>
     {% block content %}{% endblock %}

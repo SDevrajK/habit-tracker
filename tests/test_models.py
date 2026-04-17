@@ -27,6 +27,13 @@ from models import (
     set_config,
     seed_habits,
     _SEED_HABITS,
+    upsert_body_metric,
+    get_body_metrics,
+    get_latest_body_metrics,
+    get_user_profile,
+    set_user_profile,
+    compute_whtr,
+    compute_whr,
 )
 
 # ---------------------------------------------------------------------------
@@ -309,3 +316,93 @@ def test_get_logs_for_habit_range(db):
     dates = {r["date"] for r in rows}
     for i in range(3):
         assert (today - timedelta(days=i)).isoformat() in dates
+
+
+# ---------------------------------------------------------------------------
+# Body metrics and user profile
+# ---------------------------------------------------------------------------
+
+def test_body_metrics_schema_created(db):
+    """body_metrics and user_profile tables should exist after init_db."""
+    import sqlite3
+    conn = sqlite3.connect(db)
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    conn.close()
+    assert "body_metrics" in tables
+    assert "user_profile" in tables
+
+
+def test_upsert_body_metric_idempotent(db):
+    """Re-upserting a body metric on the same date updates the value."""
+    today = date.today()
+    upsert_body_metric(db, today, "weight", 180.0, "lbs")
+    upsert_body_metric(db, today, "weight", 182.5, "lbs")
+    latest = get_latest_body_metrics(db)
+    assert latest["weight"]["value"] == 182.5
+
+
+def test_upsert_body_metric_invalid_metric(db):
+    """Invalid metric names should raise ValueError."""
+    with pytest.raises(ValueError, match="Invalid metric"):
+        upsert_body_metric(db, date.today(), "bicep", 14.0, "in")
+
+
+def test_get_body_metrics_range(db):
+    """get_body_metrics returns only rows within the date range."""
+    today = date.today()
+    for i in range(7):
+        upsert_body_metric(db, today - timedelta(days=i), "weight", 180.0 + i, "lbs")
+    rows = get_body_metrics(db, "weight", today - timedelta(days=2), today)
+    assert len(rows) == 3
+
+
+def test_get_latest_body_metrics(db):
+    """get_latest_body_metrics returns the most recent row per metric."""
+    today = date.today()
+    upsert_body_metric(db, today - timedelta(days=1), "weight", 180.0, "lbs")
+    upsert_body_metric(db, today, "weight", 182.0, "lbs")
+    upsert_body_metric(db, today, "waist", 34.0, "in")
+    latest = get_latest_body_metrics(db)
+    assert latest["weight"]["value"] == 182.0
+    assert latest["waist"]["value"] == 34.0
+    assert latest["weight"]["date"] == today.isoformat()
+
+
+def test_user_profile_defaults(db):
+    """get_user_profile returns defaults when the table is empty."""
+    profile = get_user_profile(db)
+    assert profile["preferred_weight_unit"] == "lbs"
+    assert profile["preferred_length_unit"] == "in"
+
+
+def test_set_user_profile(db):
+    """set_user_profile creates and updates keys."""
+    set_user_profile(db, "height_cm", "178.0")
+    profile = get_user_profile(db)
+    assert profile["height_cm"] == "178.0"
+    # Update existing key
+    set_user_profile(db, "height_cm", "179.0")
+    profile = get_user_profile(db)
+    assert profile["height_cm"] == "179.0"
+
+
+def test_compute_whtr():
+    """compute_whtr returns the correct ratio."""
+    result = compute_whtr(80.0, 178.0)
+    assert abs(result - 80.0 / 178.0) < 1e-9
+
+
+def test_compute_whr():
+    """compute_whr returns the correct ratio."""
+    result = compute_whr(80.0, 95.0)
+    assert abs(result - 80.0 / 95.0) < 1e-9
+
+
+def test_compute_whtr_invalid():
+    """compute_whtr raises ValueError for zero/negative inputs."""
+    with pytest.raises(ValueError):
+        compute_whtr(0, 178.0)
+    with pytest.raises(ValueError):
+        compute_whtr(80.0, -1.0)
+    with pytest.raises(ValueError):
+        compute_whtr(-5.0, 178.0)

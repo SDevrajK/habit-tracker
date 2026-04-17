@@ -2,16 +2,15 @@
 Flask blueprint for the web dashboard.
 Routes: /, /heatmap, /calendar, /habits, /streak
 """
-import base64
 import json
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from flask import Blueprint, jsonify, redirect, render_template, request, url_for
-from flask import Response
+from flask import Blueprint, redirect, render_template, request, url_for
 from loguru import logger
 
 import models
+from auth import require_dashboard_auth
 from configs.config import Config
 
 DB = Config.DATABASE_URL
@@ -25,37 +24,10 @@ def _today() -> date:
 dashboard_bp = Blueprint("dashboard", __name__)
 
 
-# ---------------------------------------------------------------------------
-# HTTP Basic Auth guard
-# ---------------------------------------------------------------------------
-
-def _check_auth(username: str, password: str) -> bool:
-    return username == Config.DASHBOARD_USER and password == Config.DASHBOARD_PASS
-
-
-def _auth_required() -> Response:
-    return Response(
-        "Authentication required.",
-        401,
-        {"WWW-Authenticate": 'Basic realm="Habit Tracker"'},
-    )
-
-
 @dashboard_bp.before_request
 def require_auth():
     """Enforce HTTP Basic Auth on all dashboard routes if credentials are configured."""
-    if not Config.DASHBOARD_USER or not Config.DASHBOARD_PASS:
-        return  # auth not configured — allow through (local dev)
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Basic "):
-        return _auth_required()
-    try:
-        decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
-        username, _, password = decoded.partition(":")
-    except Exception:
-        return _auth_required()
-    if not _check_auth(username, password):
-        return _auth_required()
+    return require_dashboard_auth()
 
 
 # ---------------------------------------------------------------------------

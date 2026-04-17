@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Circumference Trends{% endblock %}
+
+{% block content %}
+<h1>Circumference Trends</h1>
+
+<div class="chart-section">
+  <h2>Core Measurements</h2>
+  <div id="single-site-chart"></div>
+</div>
+
+<div class="chart-section">
+  <h2>Arms</h2>
+  <div id="arms-chart"></div>
+</div>
+
+<div class="chart-section">
+  <h2>Thighs</h2>
+  <div id="thighs-chart"></div>
+</div>
+
+<div class="chart-section">
+  <h2>Ratios (WHtR / WHR)</h2>
+  <div id="ratios-chart"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var singleSite = {{ single_site_json | safe }};
+  var arms = {{ arms_json | safe }};
+  var thighs = {{ thighs_json | safe }};
+  var ratios = {{ ratios_json | safe }};
+
+  var hasData = function(series) {
+    return series.some(function(s) { return s.data && s.data.length > 0; });
+  };
+
+  if (hasData(singleSite)) {
+    renderLineChart("single-site-chart", singleSite, { yLabel: "{{ unit }}" });
+  }
+  if (hasData(arms)) {
+    renderLineChart("arms-chart", arms, { yLabel: "{{ unit }}" });
+  }
+  if (hasData(thighs)) {
+    renderLineChart("thighs-chart", thighs, { yLabel: "{{ unit }}" });
+  }
+  if (hasData(ratios)) {
+    renderLineChart("ratios-chart", ratios, { yLabel: "ratio" });
+  }
+</script>
+{% endblock %}

@@ -347,3 +347,234 @@ function renderChallengeGrid(containerId, dayStatuses, duration, startDateStr, c
 
   container.appendChild(svg);
 }
+
+
+// ---- Sparkline -----------------------------------------------------------
+
+/**
+ * Render a minimal sparkline (120x36 SVG, no axes, no labels).
+ * @param {string} containerId
+ * @param {Array}  data   — [{date, value}, ...]
+ * @param {string} color  — stroke color
+ */
+function renderSparkline(containerId, data, color) {
+  const container = document.getElementById(containerId);
+  if (!container || !data || data.length < 2) return;
+
+  const W = 120, H = 36, PAD = 2;
+  const svg = svgEl("svg", { width: W, height: H });
+
+  const values = data.map(function(d) { return d.value; });
+  const minV = Math.min.apply(null, values);
+  const maxV = Math.max.apply(null, values);
+  const range = maxV - minV || 1;
+
+  var points = data.map(function(d, i) {
+    var x = PAD + (i / (data.length - 1)) * (W - 2 * PAD);
+    var y = H - PAD - ((d.value - minV) / range) * (H - 2 * PAD);
+    return x + "," + y;
+  }).join(" ");
+
+  var polyline = svgEl("polyline", {
+    points: points,
+    fill: "none",
+    stroke: color || "#0969da",
+    "stroke-width": "1.5",
+    "stroke-linejoin": "round",
+    "stroke-linecap": "round",
+  });
+  svg.appendChild(polyline);
+  container.appendChild(svg);
+}
+
+
+// ---- Line Chart ----------------------------------------------------------
+
+/**
+ * Render a multi-series line chart with optional moving average overlay.
+ * @param {string} containerId
+ * @param {Array}  series  — [{label, color, data: [{date, value}], unit, movingAvg, dashed}, ...]
+ * @param {Object} options — {width, height, yLabel, movingAvgDays}
+ */
+function renderLineChart(containerId, series, options) {
+  var container = document.getElementById(containerId);
+  if (!container) return;
+
+  options = options || {};
+  var WIDTH  = options.width  || container.offsetWidth || 680;
+  var HEIGHT = options.height || 280;
+  var MA_DAYS = options.movingAvgDays || 7;
+  var Y_LABEL = options.yLabel || "";
+
+  var LEFT = 56, RIGHT = 20, TOP = 30, BOTTOM = 36;
+  var plotW = WIDTH - LEFT - RIGHT;
+  var plotH = HEIGHT - TOP - BOTTOM;
+
+  // Collect all dates and value range across all series
+  var allDates = [];
+  var allValues = [];
+  series.forEach(function(s) {
+    if (!s.data) return;
+    s.data.forEach(function(d) {
+      allDates.push(d.date);
+      allValues.push(d.value);
+    });
+  });
+
+  if (allValues.length === 0) return;
+
+  // Sort unique dates for x-axis
+  var uniqueDates = allDates.filter(function(v, i, a) { return a.indexOf(v) === i; }).sort();
+  var dateIndex = {};
+  uniqueDates.forEach(function(d, i) { dateIndex[d] = i; });
+
+  var minV = Math.min.apply(null, allValues);
+  var maxV = Math.max.apply(null, allValues);
+  var vRange = maxV - minV;
+  if (vRange === 0) { vRange = 1; minV -= 0.5; maxV += 0.5; }
+  // Add 5% padding
+  var vPad = vRange * 0.05;
+  minV -= vPad;
+  maxV += vPad;
+  vRange = maxV - minV;
+
+  function xPos(dateStr) {
+    var idx = dateIndex[dateStr];
+    if (uniqueDates.length === 1) return LEFT + plotW / 2;
+    return LEFT + (idx / (uniqueDates.length - 1)) * plotW;
+  }
+
+  function yPos(val) {
+    return TOP + plotH - ((val - minV) / vRange) * plotH;
+  }
+
+  var svg = svgEl("svg", { width: WIDTH, height: HEIGHT });
+
+  // Y-axis gridlines and labels (5 lines)
+  for (var i = 0; i <= 4; i++) {
+    var yVal = minV + (i / 4) * vRange;
+    var y = yPos(yVal);
+    var gridline = svgEl("line", {
+      x1: LEFT, y1: y, x2: LEFT + plotW, y2: y,
+      stroke: "#e1e4e8", "stroke-width": "1",
+    });
+    svg.appendChild(gridline);
+    var label = svgEl("text", {
+      x: LEFT - 6, y: y + 4,
+      "font-size": 10, fill: "#57606a", "text-anchor": "end",
+    });
+    label.textContent = yVal.toFixed(1);
+    svg.appendChild(label);
+  }
+
+  // X-axis: show month/year label at first occurrence of each month
+  var lastMonth = "";
+  uniqueDates.forEach(function(dateStr) {
+    var parts = dateStr.split("-");
+    var monthKey = parts[0] + "-" + parts[1];
+    if (monthKey !== lastMonth) {
+      lastMonth = monthKey;
+      var MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      var mIdx = parseInt(parts[1], 10) - 1;
+      var xLabel = svgEl("text", {
+        x: xPos(dateStr), y: HEIGHT - 6,
+        "font-size": 10, fill: "#57606a", "text-anchor": "middle",
+      });
+      xLabel.textContent = MONTHS[mIdx] + " " + parts[0].slice(2);
+      svg.appendChild(xLabel);
+    }
+  });
+
+  // Compute moving average for a data array
+  function computeMA(data, days) {
+    var sorted = data.slice().sort(function(a, b) { return a.date < b.date ? -1 : 1; });
+    return sorted.map(function(d, i) {
+      var start = Math.max(0, i - days + 1);
+      var slice = sorted.slice(start, i + 1);
+      var sum = slice.reduce(function(acc, v) { return acc + v.value; }, 0);
+      return { date: d.date, value: sum / slice.length };
+    });
+  }
+
+  // Draw each series
+  series.forEach(function(s) {
+    if (!s.data || s.data.length === 0) return;
+    var sorted = s.data.slice().sort(function(a, b) { return a.date < b.date ? -1 : 1; });
+
+    // Main line
+    var pathParts = sorted.map(function(d, i) {
+      var cmd = i === 0 ? "M" : "L";
+      return cmd + xPos(d.date) + "," + yPos(d.value);
+    });
+    var path = svgEl("path", {
+      d: pathParts.join(" "),
+      fill: "none",
+      stroke: s.color || "#0969da",
+      "stroke-width": s.dashed ? "1.5" : "2",
+      "stroke-dasharray": s.dashed ? "4,3" : "none",
+      "stroke-linejoin": "round",
+    });
+    svg.appendChild(path);
+
+    // Data point circles with tooltips
+    sorted.forEach(function(d) {
+      var cx = xPos(d.date);
+      var cy = yPos(d.value);
+      var circle = svgEl("circle", {
+        cx: cx, cy: cy, r: 3,
+        fill: s.color || "#0969da",
+        stroke: "white", "stroke-width": "1",
+      });
+      var tipUnit = s.unit ? " " + s.unit : "";
+      addTooltip(circle, d.date + ": " + d.value + tipUnit);
+      svg.appendChild(circle);
+    });
+
+    // Moving average overlay
+    if (s.movingAvg && sorted.length >= 2) {
+      var maData = computeMA(sorted, MA_DAYS);
+      var maParts = maData.map(function(d, i) {
+        var cmd = i === 0 ? "M" : "L";
+        return cmd + xPos(d.date) + "," + yPos(d.value);
+      });
+      var maPath = svgEl("path", {
+        d: maParts.join(" "),
+        fill: "none",
+        stroke: s.color || "#0969da",
+        "stroke-width": "1.5",
+        "stroke-dasharray": "4,3",
+        "stroke-linejoin": "round",
+        opacity: "0.6",
+      });
+      svg.appendChild(maPath);
+    }
+  });
+
+  // Legend at top-right
+  var legendX = LEFT + plotW;
+  series.forEach(function(s, i) {
+    if (!s.label) return;
+    var ly = 14 + i * 16;
+    var rect = svgEl("rect", {
+      x: legendX - 80, y: ly - 8, width: 10, height: 10, rx: 2,
+      fill: s.color || "#0969da",
+    });
+    var text = svgEl("text", {
+      x: legendX - 66, y: ly,
+      "font-size": 10, fill: "#24292f",
+    });
+    text.textContent = s.label;
+    if (s.movingAvg) {
+      var maText = svgEl("text", {
+        x: legendX - 80, y: ly + 12,
+        "font-size": 9, fill: "#57606a",
+      });
+      maText.textContent = MA_DAYS + "-day avg (dashed)";
+      svg.appendChild(maText);
+    }
+    svg.appendChild(rect);
+    svg.appendChild(text);
+  });
+
+  container.appendChild(svg);
+}

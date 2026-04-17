@@ -10,6 +10,11 @@ WEEKDAY_MAP = {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "S
 
 VALID_STATUSES = {"completed", "partial", "failed", "skipped", "not_applicable"}
 
+VALID_METRICS = {
+    "weight", "waist", "hip", "chest", "neck",
+    "upper_arm_left", "upper_arm_right", "thigh_left", "thigh_right",
+}
+
 
 def get_connection(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -60,6 +65,25 @@ CREATE TABLE IF NOT EXISTS config (
 )
 """
 
+CREATE_BODY_METRICS = """
+CREATE TABLE IF NOT EXISTS body_metrics (
+    id         INTEGER  PRIMARY KEY AUTOINCREMENT,
+    date       DATE     NOT NULL,
+    metric     TEXT     NOT NULL,
+    value      REAL     NOT NULL,
+    unit       TEXT     NOT NULL,
+    logged_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(date, metric)
+)
+"""
+
+CREATE_USER_PROFILE = """
+CREATE TABLE IF NOT EXISTS user_profile (
+    key    TEXT PRIMARY KEY,
+    value  TEXT NOT NULL
+)
+"""
+
 CONFIG_DEFAULTS = {
     "global_reminder_time": "21:00",
     "timezone": "America/Toronto",
@@ -73,6 +97,8 @@ def init_db(db_path: str) -> None:
         conn.execute(CREATE_HABITS)
         conn.execute(CREATE_LOGS)
         conn.execute(CREATE_CONFIG)
+        conn.execute(CREATE_BODY_METRICS)
+        conn.execute(CREATE_USER_PROFILE)
         for key, value in CONFIG_DEFAULTS.items():
             conn.execute(
                 "INSERT OR IGNORE INTO config(key, value) VALUES (?, ?)", (key, value)
@@ -612,3 +638,96 @@ def seed_habits(db_path: str) -> None:
             reminder_time=reminder_time,
         )
     logger.info("Seeded {} default habits.", len(_SEED_HABITS))
+
+
+# ---------------------------------------------------------------------------
+# Body metrics
+# ---------------------------------------------------------------------------
+
+_USER_PROFILE_DEFAULTS = {
+    "preferred_weight_unit": "lbs",
+    "preferred_length_unit": "in",
+}
+
+
+def upsert_body_metric(
+    db_path: str, metric_date: date, metric: str, value: float, unit: str
+) -> None:
+    """Insert or update a body metric entry. Raises ValueError for invalid metrics."""
+    if metric not in VALID_METRICS:
+        raise ValueError(f"Invalid metric '{metric}'. Must be one of {VALID_METRICS}")
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute(
+            """INSERT INTO body_metrics(date, metric, value, unit, logged_at)
+               VALUES(?, ?, ?, ?, datetime('now'))
+               ON CONFLICT(date, metric)
+               DO UPDATE SET value=excluded.value, unit=excluded.unit, logged_at=excluded.logged_at""",
+            (metric_date.isoformat(), metric, value, unit),
+        )
+    conn.close()
+    logger.debug("Body metric upserted: date={} metric={} value={} unit={}", metric_date, metric, value, unit)
+
+
+def get_body_metrics(
+    db_path: str, metric: str, start_date: date, end_date: date
+) -> list[sqlite3.Row]:
+    """Return all entries for a given metric in date order within the range."""
+    conn = get_connection(db_path)
+    rows = conn.execute(
+        "SELECT * FROM body_metrics WHERE metric = ? AND date BETWEEN ? AND ? ORDER BY date",
+        (metric, start_date.isoformat(), end_date.isoformat()),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_latest_body_metrics(db_path: str) -> dict[str, sqlite3.Row]:
+    """Return the most recent entry for each metric, keyed by metric name."""
+    conn = get_connection(db_path)
+    rows = conn.execute(
+        """SELECT bm.* FROM body_metrics bm
+           INNER JOIN (
+               SELECT metric, MAX(date) AS max_date FROM body_metrics GROUP BY metric
+           ) latest ON bm.metric = latest.metric AND bm.date = latest.max_date"""
+    ).fetchall()
+    conn.close()
+    return {row["metric"]: row for row in rows}
+
+
+def get_user_profile(db_path: str) -> dict[str, str]:
+    """Return all user_profile rows as a dict, merged with defaults."""
+    result = dict(_USER_PROFILE_DEFAULTS)
+    conn = get_connection(db_path)
+    rows = conn.execute("SELECT key, value FROM user_profile").fetchall()
+    conn.close()
+    for row in rows:
+        result[row["key"]] = row["value"]
+    return result
+
+
+def set_user_profile(db_path: str, key: str, value: str) -> None:
+    """Upsert a single user_profile key."""
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute(
+            """INSERT INTO user_profile(key, value) VALUES(?, ?)
+               ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
+            (key, value),
+        )
+    conn.close()
+    logger.debug("User profile set: {}={}", key, value)
+
+
+def compute_whtr(waist_cm: float, height_cm: float) -> float:
+    """Compute waist-to-height ratio. Raises ValueError if either input is non-positive."""
+    if waist_cm <= 0 or height_cm <= 0:
+        raise ValueError("Both waist_cm and height_cm must be positive.")
+    return waist_cm / height_cm
+
+
+def compute_whr(waist_cm: float, hip_cm: float) -> float:
+    """Compute waist-to-hip ratio. Raises ValueError if either input is non-positive."""
+    if waist_cm <= 0 or hip_cm <= 0:
+        raise ValueError("Both waist_cm and hip_cm must be positive.")
+    return waist_cm / hip_cm

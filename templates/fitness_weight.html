@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Weight Trend{% endblock %}
+
+{% block content %}
+<h1>Weight Trend</h1>
+
+{% if stats %}
+<div class="weight-stats">
+  <div class="weight-stat">
+    <div class="stat-value">{{ stats.current }}</div>
+    <div class="stat-label">Current ({{ unit }})</div>
+  </div>
+  <div class="weight-stat">
+    <div class="stat-value">{{ stats.min }}</div>
+    <div class="stat-label">Min</div>
+  </div>
+  <div class="weight-stat">
+    <div class="stat-value">{{ stats.max }}</div>
+    <div class="stat-label">Max</div>
+  </div>
+  <div class="weight-stat">
+    <div class="stat-value">{{ stats.change }}</div>
+    <div class="stat-label">Total Change</div>
+  </div>
+</div>
+{% endif %}
+
+<div class="chart-section">
+  <div id="weight-chart"></div>
+</div>
+
+{% if not stats %}
+<p class="empty">No weight data logged yet. Use /weight in Telegram or log from the bot.</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var weightData = {{ data_json | safe }};
+  if (weightData.length > 0) {
+    renderLineChart("weight-chart", [
+      {
+        label: "Weight",
+        color: "#0969da",
+        data: weightData,
+        unit: "{{ unit }}",
+        movingAvg: true
+      }
+    ], { yLabel: "{{ unit }}", movingAvgDays: 7 });
+  }
+</script>
+{% endblock %}
