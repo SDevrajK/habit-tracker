@@ -5,6 +5,7 @@
 
 :root {
   --color-completed: #2da44e;   /* green  — done / good threshold */
+  --color-low:      #f08a83;   /* red    — low / bad threshold   */
   --color-partial:   #d1a726;   /* amber  — between thresholds    */
   --color-failed:    #cf222e;   /* red    — failed / unlogged      */
   --color-skipped:   #8c959f;   /* grey   — intentionally skipped */
@@ -97,7 +98,7 @@ h2 { font-size: 1.1rem; margin: 24px 0 12px; }
 .swatch-skipped::before   { background: var(--color-skipped); }
 .swatch-future::before    { background: var(--color-na); }
 .swatch-none::before      { background: var(--color-none); }
-.swatch-low::before       { background: #9be9a8; }
+.swatch-low::before       { background: var(--color-low); }
 .swatch-mid::before       { background: var(--color-partial); }
 .swatch-high::before      { background: var(--color-completed); }
 

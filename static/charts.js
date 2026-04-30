@@ -25,8 +25,7 @@ const COLORS = {
 function fractionToColor(fraction) {
   if (fraction === undefined || fraction === null || fraction === 0) return COLORS.none;
   if (fraction < 0.34) return "#f08a83";
-  if (fraction < 0.67) return "#ecd240";
-  if (fraction == 1.0) return "#32db78";
+  if (fraction < 1.0) return "#d1a726";
 
   return COLORS.completed;
 }
