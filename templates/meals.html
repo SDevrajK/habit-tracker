@@ -45,9 +45,9 @@
         <span class="meal-time">{{ m.time }}</span>
       </div>
       <p class="meal-description">{{ m.description }}</p>
-      {% if m.items %}
+      {% if m["items"] %}
         <div class="meal-items">
-          {% for item in m.items %}
+          {% for item in m["items"] %}
             <span class="meal-item-tag">{{ item }}</span>
           {% endfor %}
         </div>
