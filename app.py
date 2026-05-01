@@ -18,11 +18,12 @@ from loguru import logger
 from telegram import Update
 
 from configs.config import Config
-from models import get_habits_for_day, get_log, get_streak, init_db, seed_habits
+from models import get_habits_for_day, get_log, get_streak, init_db, seed_habits, ensure_meal_habit
 
 # Initialise database and seed on every startup (idempotent operations).
 init_db(Config.DATABASE_URL)
 seed_habits(Config.DATABASE_URL)
+ensure_meal_habit(Config.DATABASE_URL)
 
 app = Flask(__name__)
 
@@ -77,9 +78,11 @@ def telegram_webhook():
 
 from dashboard import dashboard_bp  # noqa: E402
 from fitness import fitness_bp  # noqa: E402
+from meals import meals_bp  # noqa: E402
 
 app.register_blueprint(dashboard_bp)
 app.register_blueprint(fitness_bp)
+app.register_blueprint(meals_bp)
 
 
 # ---------------------------------------------------------------------------

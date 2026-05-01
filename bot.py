@@ -31,6 +31,7 @@ from telegram.ext import (
 
 from configs.config import Config
 import models
+import nutrition
 
 DB = Config.DATABASE_URL
 CHAT_ID = Config.TELEGRAM_CHAT_ID
@@ -885,6 +886,65 @@ async def fitness_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 # ---------------------------------------------------------------------------
+# /meal
+# ---------------------------------------------------------------------------
+
+def _auto_log_meals_habit(log_date: date) -> None:
+    """Find the 'Log meals' habit and update its log with today's meal count."""
+    habits = models.get_all_active_habits(DB)
+    meal_habit = next((h for h in habits if h["name"] == "Log meals"), None)
+    if not meal_habit:
+        return
+    count = models.count_meals_for_day(DB, log_date)
+    models.upsert_numeric_log(DB, meal_habit["id"], log_date, float(count))
+
+
+async def meal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/meal grilled chicken, rice, broccoli — log a meal with optional nutrition."""
+    if not _authorised(update):
+        return
+    if not context.args:
+        await update.message.reply_text("Usage: /meal grilled chicken, rice, broccoli")
+        return
+
+    description = " ".join(context.args)
+    items = nutrition.parse_items(description)
+    today = _today()
+    now = datetime.now(ZoneInfo(Config.TIMEZONE))
+    meal_time = now.strftime("%H:%M")
+
+    result = nutrition.fetch_nutrition(items, Config.API_NINJAS_KEY)
+
+    calories = protein_g = carbs_g = fat_g = None
+    nutrition_raw = None
+    if result:
+        calories = result["calories"]
+        protein_g = result["protein_g"]
+        carbs_g = result["carbs_g"]
+        fat_g = result["fat_g"]
+        nutrition_raw = json.dumps(result["raw"])
+
+    models.add_meal(
+        DB, today, meal_time, description,
+        json.dumps(items), calories, protein_g, carbs_g, fat_g, nutrition_raw,
+    )
+
+    _auto_log_meals_habit(today)
+
+    lines = [f"\U0001f37d Meal logged at {meal_time}"]
+    lines.append(f"  {description}")
+    if calories is not None:
+        lines.append(
+            f"  \U0001f4ca {calories:.0f} cal | {protein_g:.0f}g P | {carbs_g:.0f}g C | {fat_g:.0f}g F"
+        )
+
+    meal_count = models.count_meals_for_day(DB, today)
+    lines.append(f"  Meals today: {meal_count}")
+
+    await update.message.reply_text("\n".join(lines))
+
+
+# ---------------------------------------------------------------------------
 # Application builder
 # ---------------------------------------------------------------------------
 
@@ -925,6 +985,7 @@ def build_application(token: str) -> Application:
     application.add_handler(CommandHandler("challenge", challenge_command))
     application.add_handler(CommandHandler("weight", weight_command))
     application.add_handler(CommandHandler("fitness", fitness_command))
+    application.add_handler(CommandHandler("meal", meal_command))
     application.add_handler(meas_conv)
     application.add_handler(add_conv)
     application.add_handler(CallbackQueryHandler(log_callback, pattern=r"^log:"))

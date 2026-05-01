@@ -17,6 +17,8 @@
     <a href="{{ url_for('fitness.overview') }}" class="nav-link">Fitness</a>
     <a href="{{ url_for('fitness.weight') }}" class="nav-link">Weight</a>
     <a href="{{ url_for('fitness.measurements') }}" class="nav-link">Measurements</a>
+    <span class="nav-sep">|</span>
+    <a href="{{ url_for('meals.meals_view') }}" class="nav-link">Meals</a>
   </nav>
   <main>
     {% block content %}{% endblock %}

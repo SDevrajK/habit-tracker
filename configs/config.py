@@ -17,6 +17,7 @@ class Config:
     PORT: int = int(os.environ.get("PORT", 5000))
     DASHBOARD_USER: str | None = os.environ.get("DASHBOARD_USER")
     DASHBOARD_PASS: str | None = os.environ.get("DASHBOARD_PASS")
+    API_NINJAS_KEY: str | None = os.environ.get("API_NINJAS_KEY")
 
 
 logger.debug(

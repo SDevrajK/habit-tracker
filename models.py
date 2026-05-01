@@ -84,6 +84,22 @@ CREATE TABLE IF NOT EXISTS user_profile (
 )
 """
 
+CREATE_MEALS = """
+CREATE TABLE IF NOT EXISTS meals (
+    id             INTEGER  PRIMARY KEY AUTOINCREMENT,
+    date           DATE     NOT NULL,
+    time           TEXT     NOT NULL,
+    description    TEXT     NOT NULL,
+    items          TEXT,
+    calories       REAL,
+    protein_g      REAL,
+    carbs_g        REAL,
+    fat_g          REAL,
+    nutrition_raw  TEXT,
+    logged_at      DATETIME NOT NULL DEFAULT (datetime('now'))
+)
+"""
+
 CONFIG_DEFAULTS = {
     "global_reminder_time": "21:00",
     "timezone": "America/Toronto",
@@ -99,6 +115,7 @@ def init_db(db_path: str) -> None:
         conn.execute(CREATE_CONFIG)
         conn.execute(CREATE_BODY_METRICS)
         conn.execute(CREATE_USER_PROFILE)
+        conn.execute(CREATE_MEALS)
         for key, value in CONFIG_DEFAULTS.items():
             conn.execute(
                 "INSERT OR IGNORE INTO config(key, value) VALUES (?, ?)", (key, value)
@@ -731,3 +748,100 @@ def compute_whr(waist_cm: float, hip_cm: float) -> float:
     if waist_cm <= 0 or hip_cm <= 0:
         raise ValueError("Both waist_cm and hip_cm must be positive.")
     return waist_cm / hip_cm
+
+
+# ---------------------------------------------------------------------------
+# Meals
+# ---------------------------------------------------------------------------
+
+def add_meal(
+    db_path: str,
+    meal_date: date,
+    meal_time: str,
+    description: str,
+    items: Optional[str] = None,
+    calories: Optional[float] = None,
+    protein_g: Optional[float] = None,
+    carbs_g: Optional[float] = None,
+    fat_g: Optional[float] = None,
+    nutrition_raw: Optional[str] = None,
+) -> int:
+    """Insert a meal entry and return the new row ID."""
+    conn = get_connection(db_path)
+    with conn:
+        cursor = conn.execute(
+            """INSERT INTO meals(date, time, description, items,
+                   calories, protein_g, carbs_g, fat_g, nutrition_raw)
+               VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                meal_date.isoformat(), meal_time, description, items,
+                calories, protein_g, carbs_g, fat_g, nutrition_raw,
+            ),
+        )
+    meal_id = cursor.lastrowid
+    conn.close()
+    logger.info("Meal added: id={} date={} time={}", meal_id, meal_date, meal_time)
+    return meal_id
+
+
+def get_meals_for_day(db_path: str, meal_date: date) -> list[sqlite3.Row]:
+    """Return all meals for a given date, ordered by time."""
+    conn = get_connection(db_path)
+    rows = conn.execute(
+        "SELECT * FROM meals WHERE date = ? ORDER BY time",
+        (meal_date.isoformat(),),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_meal_totals_for_day(db_path: str, meal_date: date) -> dict:
+    """Return summed nutrition and count for a given date."""
+    conn = get_connection(db_path)
+    row = conn.execute(
+        """SELECT COUNT(*) AS count,
+                  SUM(calories) AS calories,
+                  SUM(protein_g) AS protein_g,
+                  SUM(carbs_g) AS carbs_g,
+                  SUM(fat_g) AS fat_g
+           FROM meals WHERE date = ?""",
+        (meal_date.isoformat(),),
+    ).fetchone()
+    conn.close()
+    return {
+        "count": row["count"],
+        "calories": row["calories"],
+        "protein_g": row["protein_g"],
+        "carbs_g": row["carbs_g"],
+        "fat_g": row["fat_g"],
+    }
+
+
+def count_meals_for_day(db_path: str, meal_date: date) -> int:
+    """Return the number of meals logged for a given date."""
+    conn = get_connection(db_path)
+    count = conn.execute(
+        "SELECT COUNT(*) FROM meals WHERE date = ?",
+        (meal_date.isoformat(),),
+    ).fetchone()[0]
+    conn.close()
+    return count
+
+
+def ensure_meal_habit(db_path: str) -> None:
+    """Ensure the 'Log meals' habit exists. Idempotent."""
+    conn = get_connection(db_path)
+    row = conn.execute("SELECT id FROM habits WHERE name = 'Log meals'").fetchone()
+    conn.close()
+    if row:
+        return
+    add_habit(
+        db_path,
+        name="Log meals",
+        habit_type="numeric",
+        frequency="daily",
+        unit="meals",
+        threshold_ok=2.0,
+        threshold_good=3.0,
+        numeric_presets=[0, 1, 2, 3, 4, 5],
+    )

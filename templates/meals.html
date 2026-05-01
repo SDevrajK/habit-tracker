@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Meals — Habit Tracker{% endblock %}
+
+{% block content %}
+<div class="date-nav">
+  <a href="{{ url_for('meals.meals_view', date=prev_date) }}" class="date-nav-btn">&larr;</a>
+  <h1>{{ view_date.strftime('%A, %B %d') }}</h1>
+  {% if not is_today %}
+    <a href="{{ url_for('meals.meals_view') }}" class="date-nav-btn">Today</a>
+  {% endif %}
+  <a href="{{ url_for('meals.meals_view', date=next_date) }}" class="date-nav-btn">&rarr;</a>
+</div>
+
+{% if totals.count > 0 and totals.calories is not none %}
+<div class="daily-totals">
+  <h2>Daily Totals</h2>
+  <div class="totals-grid">
+    <div class="total-item">
+      <span class="total-value">{{ "%.0f"|format(totals.calories) }}</span>
+      <span class="total-label">calories</span>
+    </div>
+    <div class="total-item">
+      <span class="total-value">{{ "%.0f"|format(totals.protein_g) }}g</span>
+      <span class="total-label">protein</span>
+    </div>
+    <div class="total-item">
+      <span class="total-value">{{ "%.0f"|format(totals.carbs_g) }}g</span>
+      <span class="total-label">carbs</span>
+    </div>
+    <div class="total-item">
+      <span class="total-value">{{ "%.0f"|format(totals.fat_g) }}g</span>
+      <span class="total-label">fat</span>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if not meals %}
+  <p class="empty">No meals logged for this day. Use <code>/meal</code> in Telegram to log.</p>
+{% else %}
+  <div class="meal-list">
+    {% for m in meals %}
+    <div class="meal-card">
+      <div class="meal-header">
+        <span class="meal-time">{{ m.time }}</span>
+      </div>
+      <p class="meal-description">{{ m.description }}</p>
+      {% if m.items %}
+        <div class="meal-items">
+          {% for item in m.items %}
+            <span class="meal-item-tag">{{ item }}</span>
+          {% endfor %}
+        </div>
+      {% endif %}
+      {% if m.calories is not none %}
+        <div class="meal-nutrition">
+          <span>{{ "%.0f"|format(m.calories) }} cal</span>
+          <span>{{ "%.0f"|format(m.protein_g) }}g P</span>
+          <span>{{ "%.0f"|format(m.carbs_g) }}g C</span>
+          <span>{{ "%.0f"|format(m.fat_g) }}g F</span>
+        </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+<p class="meal-count">{{ totals.count }} meal{{ "s" if totals.count != 1 else "" }} logged</p>
+{% endblock %}
