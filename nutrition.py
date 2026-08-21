@@ -2,8 +2,9 @@
 Nutrition parsing module.
 
 Splits a meal description into items and fetches nutrition data from
-API Ninjas. Designed for easy swap to a local LLM in the future —
-callers only depend on the return dict shape from fetch_nutrition().
+API Ninjas. Callers only depend on the return dict shape from
+fetch_nutrition(), so the data source can be swapped without touching
+the rest of the app.
 """
 import json
 import urllib.request

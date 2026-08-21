@@ -3,3 +3,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# AI assistant configuration (not part of the project)
+.claude/
+CLAUDE.md
