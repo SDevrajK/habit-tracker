@@ -16,7 +16,7 @@
 ### 1. Clone and create a virtual environment
 
 ```bash
-cd /home/sdevrajk/projects/habit-tracker
+cd habit-tracker
 python -m venv .venv
 source .venv/bin/activate
 ```
